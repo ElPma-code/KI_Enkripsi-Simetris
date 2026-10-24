@@ -3,15 +3,57 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Document</title>
+  <title>Nestiefy</title>
+
+  <!-- Font dari design.md: Bodoni Moda (judul) & Montserrat (teks) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,wght@0,700;1,400&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
 
   <!-- Tailwind CSS (CDN, tanpa build) -->
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 
+  <!-- Warna & font custom, dipakai sebagai class: bg-primary, text-gold, font-heading, dst. -->
+  <style type="text/tailwindcss">
+    @theme {
+      --color-cream: #F7F3EA;
+      --color-primary: #005653;
+      --color-gold: #B39957;
+      --color-sage: #97B8BD;
+      --color-muted: #556D79;
+      --color-ink: #333F4D;
+      --font-heading: "Bodoni Moda", serif;
+      --font-body: "Montserrat", sans-serif;
+    }
+  </style>
+
   <!-- CSS tambahan -->
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="bg-cream font-body font-medium text-ink antialiased">
+
+  <!-- Hero -->
+  <main class="mx-auto grid max-w-7xl items-center gap-12 px-6 py-10 lg:grid-cols-2 lg:py-16">
+
+    <!-- Kiri: teks -->
+    <div>
+      <p class="text-xs uppercase tracking-[0.3em]">A Safe Place<br>for Tenants &amp; Landlords</p>
+
+      <h1 class="mt-4 font-heading text-7xl font-bold leading-none text-primary sm:text-8xl lg:text-9xl">Nestiefy</h1>
+
+      <p class="mt-6 text-sm uppercase tracking-[0.3em] sm:text-base">Secure Document Portal<br>for Your Next Home</p>
+
+      <p class="mt-6 max-w-md leading-relaxed text-muted">
+        Store rental agreements, ID documents, payment proofs, and more — safely and privately.
+        Your data, your space, our protection.
+      </p>
+
+      <div class="mt-8 flex flex-wrap gap-4">
+        <a href="#" class="rounded-md bg-primary px-6 py-3 text-white hover:bg-primary/90">Get Started &rarr;</a>
+        <a href="#" class="rounded-md border border-ink/30 px-6 py-3 hover:border-primary hover:text-primary">Learn More</a>
+      </div>
+    </div>
+
 
   <script src="script.js"></script>
 
