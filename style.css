@@ -1,0 +1,4 @@
+/* Scroll halus saat klik link ke section (mis. Get Started -> #features) */
+html {
+  scroll-behavior: smooth;
+}
