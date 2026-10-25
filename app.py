@@ -8,7 +8,7 @@ from pathlib import Path
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, send_file, jsonify, abort
+    session, send_file, jsonify, abort, flash, get_flashed_messages
 )
 from argon2.exceptions import VerifyMismatchError, VerificationError
 
@@ -242,14 +242,13 @@ def upload_document():
 
 
 def _upload_error(message: str):
-    # Render ulang dashboard dengan pesan error
-    user_id = session.get("user_id")
-    # Sederhana: redirect dengan flash-style query param
-    return render_template("dashboard.html",
-        email="", role="tenant",
-        total_files=0, stats_by_cipher={}, recent_documents=[],
-        upload_error=message,
-    ), 400
+    """Flash pesan error lalu redirect ke view upload (bukan render langsung).
+
+    Dengan redirect, session user tetap utuh (role & email benar), dan
+    halaman kembali ke #upload sehingga user bisa memperbaiki form.
+    """
+    flash(message, "upload_error")
+    return redirect(url_for("dashboard") + "#upload")
 
 
 # Download & dekripsi
@@ -299,7 +298,7 @@ def download_document(doc_id: int):
         plaintext = crypto.decrypt_file(blob, doc["cipher"])
     except Exception:
         app.logger.exception("Dekripsi gagal untuk doc %s", doc_id)
-        abort(500)
+        abort(400, description="File tidak valid atau rusak. Silakan upload ulang.")
 
     # Kirim sebagai file attachment
     from io import BytesIO
@@ -354,6 +353,36 @@ def logout():
 
     session.clear()
     return redirect(url_for("login"))
+
+# Error handlers — tampilkan halaman error yang ramah
+@app.errorhandler(400)
+def handle_bad_request(error):
+    return render_template(
+        "error.html",
+        code=400,
+        title="Bad Request",
+        message=getattr(error, "description", "Permintaan tidak valid."),
+    ), 400
+
+
+@app.errorhandler(404)
+def handle_not_found(error):
+    return render_template(
+        "error.html",
+        code=404,
+        title="Not Found",
+        message="Halaman atau file yang Anda cari tidak ditemukan.",
+    ), 404
+
+
+@app.errorhandler(500)
+def handle_internal_error(error):
+    return render_template(
+        "error.html",
+        code=500,
+        title="Internal Server Error",
+        message="Terjadi kesalahan pada server. Silakan coba lagi.",
+    ), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
