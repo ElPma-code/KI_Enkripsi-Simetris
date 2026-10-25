@@ -46,6 +46,23 @@ def inject_csrf_token():
 
     return {"csrf_token": csrf_token}
 
+def _decrypt_name(row) -> str:
+    """Dekripsi nama file dari kolom original_name_enc.
+    Baris lama yang belum dimigrasi masih memakai kolom original_name (polos)."""
+    if row["original_name_enc"] is None:
+        return row["original_name"]
+    try:
+        return crypto.decrypt_text(row["original_name_enc"])
+    except Exception:
+        app.logger.exception("Gagal mendekripsi nama file doc %s", row["id"])
+        return "(nama file tidak dapat didekripsi)"
+
+
+def _with_plain_names(rows):
+    """Ubah hasil query jadi dict + nama file yang sudah didekripsi untuk template."""
+    return [{**dict(row), "original_name": _decrypt_name(row)} for row in rows]
+
+
 # Halaman utama
 @app.route("/")
 def home():
@@ -123,7 +140,7 @@ def dashboard():
         # Recent documents (limit 10)
         recent = connection.execute(
             """
-            SELECT id, original_name, category, mime_type, size_bytes,
+            SELECT id, original_name, original_name_enc, category, mime_type, size_bytes,
                    cipher, datetime(created_at, 'localtime') AS created_at
             FROM documents
             WHERE user_id = ?
@@ -132,6 +149,7 @@ def dashboard():
             """,
             (user_id,)
         ).fetchall()
+        recent = _with_plain_names(recent)
 
         # Khusus landlord: semua dokumen milik tenant-nya (opsi A)
         tenant_documents = []
@@ -139,7 +157,7 @@ def dashboard():
         if user["role"] == "landlord":
             tenant_documents = connection.execute(
                 """
-                SELECT d.id, d.original_name, d.category, d.mime_type,
+                SELECT d.id, d.original_name, d.original_name_enc, d.category, d.mime_type,
                        d.size_bytes, d.cipher, datetime(d.created_at, 'localtime') AS created_at,
                        u.email AS tenant_email
                 FROM documents d
@@ -149,6 +167,7 @@ def dashboard():
                 """,
                 (user_id,)
             ).fetchall()
+            tenant_documents = _with_plain_names(tenant_documents)
 
             tenant_count = connection.execute(
                 "SELECT COUNT(*) FROM users WHERE landlord_id = ?",
@@ -221,13 +240,15 @@ def upload_document():
         connection.execute(
             """
             INSERT INTO documents (
-                user_id, original_name, stored_name, category, mime_type,
+                user_id, original_name, original_name_enc, stored_name, category, mime_type,
                 size_bytes, cipher, iv_or_nonce, auth_tag,
                 wrapped_key, key_wrap_iv, sha256_plaintext
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                user_id, file_name, stored_name, category,
+                # Nama asli tidak disimpan polos: kolom original_name diisi '',
+                # nama sebenarnya disimpan terenkripsi di original_name_enc.
+                user_id, "", crypto.encrypt_text(file_name), stored_name, category,
                 file.mimetype, len(plaintext), cipher_name,
                 blob["iv_or_nonce"], blob["auth_tag"],
                 blob["wrapped_key"], blob["key_wrap_iv"],
@@ -306,7 +327,7 @@ def download_document(doc_id: int):
         BytesIO(plaintext),
         mimetype=doc["mime_type"] or "application/octet-stream",
         as_attachment=True,
-        download_name=doc["original_name"],
+        download_name=_decrypt_name(doc),
     )
 
 

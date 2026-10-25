@@ -4,6 +4,7 @@ from pathlib import Path
 from getpass import getpass
 
 from argon2 import PasswordHasher
+from dotenv import load_dotenv
 
 # Lokasi file
 BASE_DIR = Path(__file__).resolve().parent
@@ -18,10 +19,13 @@ def get_connection():
     """Buka koneksi ke database.
     - row_factory = sqlite3.Row  -> kolom bisa diakses pakai nama, mis. row["email"]
     - PRAGMA foreign_keys = ON   -> wajib di SQLite agar ON DELETE CASCADE benar-benar jalan
+    - PRAGMA secure_delete = ON  -> data yang dihapus/diubah ditimpa nol di file .db,
+                                    bukan sekadar ditandai kosong (sisa data tidak bisa diintip)
     """
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA secure_delete = ON")
     return connection
 
 
@@ -72,7 +76,10 @@ def init_db():
             CREATE TABLE IF NOT EXISTS documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
+                -- Kolom lama, sekarang selalu diisi '' (nama asli TIDAK disimpan polos).
                 original_name TEXT NOT NULL,
+                -- Nama file asli terenkripsi AES-GCM (lihat crypto.encrypt_text).
+                original_name_enc BLOB,
                 stored_name TEXT NOT NULL,
                 category TEXT NOT NULL,
                 mime_type TEXT,
@@ -89,11 +96,49 @@ def init_db():
             )
         """)
 
+        # Migrasi: tambah kolom original_name_enc untuk database lama
+        doc_columns = [row[1] for row in connection.execute("PRAGMA table_info(documents)")]
+        if "original_name_enc" not in doc_columns:
+            connection.execute("ALTER TABLE documents ADD COLUMN original_name_enc BLOB")
+            print("Kolom original_name_enc ditambahkan ke tabel documents.")
+
         connection.commit()
     finally:
         connection.close()
 
     print("Database berhasil diinisialisasi.")
+
+
+def migrate_encrypt_filenames():
+    """Enkripsi nama file lama yang masih tersimpan polos di kolom original_name.
+    Aman dijalankan berkali-kali: baris yang sudah terenkripsi dilewati."""
+    import crypto  # import di sini karena butuh MASTER_KEY_AES dari .env
+
+    connection = get_connection()
+    try:
+        rows = connection.execute(
+            "SELECT id, original_name FROM documents "
+            "WHERE original_name_enc IS NULL AND original_name != ''"
+        ).fetchall()
+
+        for row in rows:
+            connection.execute(
+                "UPDATE documents SET original_name_enc = ?, original_name = '' WHERE id = ?",
+                (crypto.encrypt_text(row["original_name"]), row["id"])
+            )
+        connection.commit()
+    finally:
+        connection.close()
+
+    if rows:
+        # VACUUM menulis ulang seluruh file .db, sehingga sisa nama polos yang lama
+        # benar-benar hilang dari disk (SQLite tidak langsung menimpa data lama).
+        connection = sqlite3.connect(DB_PATH)
+        try:
+            connection.execute("VACUUM")
+        finally:
+            connection.close()
+        print(f"{len(rows)} nama file lama berhasil dienkripsi.")
 
 
 def seed_users():
@@ -152,5 +197,7 @@ def seed_users():
 
 if __name__ == "__main__":
     init_env()
+    load_dotenv(ENV_PATH)       # supaya MASTER_KEY_AES terbaca untuk migrasi
     init_db()
+    migrate_encrypt_filenames()
     seed_users()

@@ -8,8 +8,18 @@ Cipher yang didukung:
 
 Key management: envelope encryption.
 - Setiap file punya data key random sendiri (AES 32B / DES 8B / RC4 32B).
-- Data key di-wrap pakai master key dari environment variable.
-- Master key TIDAK pernah disimpan di DB, hanya di env.
+- Semua data key di-wrap dengan SATU master key (MASTER_KEY_AES, 256-bit, dari .env):
+    * data key AES      -> di-wrap dengan AES-GCM
+    * data key DES/RC4  -> di-wrap dengan AES-CBC + HMAC-SHA256 (encrypt-then-MAC)
+- Master key TIDAK pernah disimpan di DB, hanya di environment.
+
+Metadata:
+- Nama file asli dienkripsi dengan AES-GCM (master key + AAD khusus nama file),
+  karena nama seperti "KTP_Budi.jpg" sendiri sudah mengandung data pribadi.
+
+Keterbatasan yang disadari:
+- Master key yang sama dipakai untuk enkripsi AES-CBC dan HMAC saat wrap key
+  DES/RC4. Idealnya dua kunci terpisah diturunkan dengan HKDF.
 """
 
 import os
@@ -40,15 +50,8 @@ def _load_master_key(env_name: str, expected_len: int) -> bytes:
 
 
 def get_master_key_aes() -> bytes:
-    return _load_master_key("MASTER_KEY_AES", 32)  # 256-bit
-
-
-def get_master_key_des() -> bytes:
-    return _load_master_key("MASTER_KEY_DES", 8)   # 64-bit (56-bit efektif)
-
-
-def get_master_key_rc4() -> bytes:
-    return _load_master_key("MASTER_KEY_RC4", 32)  # 256-bit
+    """Satu-satunya master key aplikasi (256-bit). Dipakai untuk wrap semua data key."""
+    return _load_master_key("MASTER_KEY_AES", 32)
 
 
 # Tipe hasil enkripsi
@@ -245,6 +248,33 @@ def _decrypt_rc4(blob: EncryptedBlob) -> bytes:
     if hashlib.sha256(plaintext).hexdigest() != blob["sha256_plaintext"]:
         raise ValueError("Integritas plaintext RC4 gagal (hash tidak cocok).")
     return plaintext
+
+
+# Enkripsi metadata teks (nama file)
+
+# AAD (Additional Authenticated Data) = label konteks yang ikut diautentikasi GCM.
+# Ciphertext nama file tidak bisa dipindah ke konteks lain tanpa ketahuan.
+FILENAME_AAD = b"nestiefy:filename:v1"
+
+
+def encrypt_text(text: str, aad: bytes = FILENAME_AAD) -> bytes:
+    """Enkripsi teks pendek dengan AES-256-GCM + master key.
+    Format output: nonce (12 B) || ciphertext || tag (16 B)."""
+    nonce = secrets.token_bytes(12)
+    cipher = AES.new(get_master_key_aes(), AES.MODE_GCM, nonce=nonce)
+    cipher.update(aad)
+    ciphertext, tag = cipher.encrypt_and_digest(text.encode("utf-8"))
+    return nonce + ciphertext + tag
+
+
+def decrypt_text(blob: bytes, aad: bytes = FILENAME_AAD) -> str:
+    """Kebalikan encrypt_text. Raise ValueError kalau data dirusak / key salah."""
+    if len(blob) < 12 + 16:
+        raise ValueError("Ciphertext teks terlalu pendek.")
+    nonce, ciphertext, tag = blob[:12], blob[12:-16], blob[-16:]
+    cipher = AES.new(get_master_key_aes(), AES.MODE_GCM, nonce=nonce)
+    cipher.update(aad)
+    return cipher.decrypt_and_verify(ciphertext, tag).decode("utf-8")
 
 
 # API Publik
