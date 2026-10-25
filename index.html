@@ -32,6 +32,22 @@
 </head>
 <body class="bg-cream font-body font-medium text-ink antialiased">
 
+  <!-- Navbar: logo di kiri, ikon login (Lucide "log-in") di kanan -->
+  <!-- Background hijau full-width, isi tetap rata dengan konten (max-w-7xl) -->
+  <header class="bg-primary">
+    <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
+      <a href="index.html" class="font-heading text-3xl font-bold text-cream">Nestiefy</a>
+
+      <!-- Hover: background jadi warna dasar (cream), ikon jadi hijau -->
+      <a href="login.html" aria-label="Sign in" title="Sign in"
+        class="flex h-11 w-11 items-center justify-center rounded-full text-cream transition-colors hover:bg-cream hover:text-primary">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m10 17 5-5-5-5"/><path d="M15 12H3"/><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+        </svg>
+      </a>
+    </div>
+  </header>
+
   <!-- Hero -->
   <main class="mx-auto grid max-w-7xl items-center gap-12 px-6 py-10 lg:grid-cols-2 lg:py-16">
 
