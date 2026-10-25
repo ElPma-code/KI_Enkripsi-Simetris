@@ -28,6 +28,27 @@ def init_db():
             )
         """)
 
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                original_name TEXT NOT NULL,
+                stored_name TEXT NOT NULL,
+                category TEXT NOT NULL,
+                mime_type TEXT,
+                size_bytes INTEGER NOT NULL,
+                cipher TEXT NOT NULL
+                    CHECK (cipher IN ('AES', 'DES', 'RC4')),
+                iv_or_nonce BLOB NOT NULL,
+                auth_tag BLOB NOT NULL,
+                wrapped_key BLOB NOT NULL,
+                key_wrap_iv BLOB NOT NULL,
+                sha256_plaintext TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+
         connection.commit()
     finally:
         connection.close()
