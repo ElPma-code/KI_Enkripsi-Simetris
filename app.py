@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 import os
 import sqlite3
 import uuid
@@ -169,8 +171,11 @@ def upload_document():
     if not category:
         return _upload_error("Category wajib dipilih.")
 
+    original_ext = Path(file.filename).suffix
     if not file_name:
         file_name = file.filename
+    elif original_ext and not file_name.lower().endswith(original_ext.lower()):
+        file_name += original_ext
 
     plaintext = file.read()
     if not plaintext:

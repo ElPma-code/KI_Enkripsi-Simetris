@@ -1,15 +1,32 @@
+import secrets
 import sqlite3
 from pathlib import Path
 from getpass import getpass
 
 from argon2 import PasswordHasher
 
-# Lokasi database
+# Lokasi file
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "instance" / "nestiefy.db"
+ENV_PATH = BASE_DIR / ".env"
 
 # Objek untuk hashing password
 password_hasher = PasswordHasher()
+
+
+def init_env():
+    """Buat file .env berisi key acak kalau belum ada.
+    Kalau .env sudah ada, tidak diubah (supaya file lama tetap bisa didekripsi)."""
+    if ENV_PATH.exists():
+        print(".env sudah ada, dilewati.")
+        return
+
+    ENV_PATH.write_text(
+        f"FLASK_SECRET_KEY={secrets.token_hex(32)}\n"
+        f"MASTER_KEY_AES={secrets.token_hex(32)}\n",
+        encoding="utf-8",
+    )
+    print(".env berhasil dibuat dengan key acak.")
 
 
 def init_db():
@@ -100,5 +117,6 @@ def seed_users():
 
 
 if __name__ == "__main__":
+    init_env()
     init_db()
     seed_users()
