@@ -28,7 +28,7 @@
   </style>
 
   <!-- CSS tambahan -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="bg-cream font-body font-medium text-ink antialiased">
 
@@ -130,9 +130,9 @@
   </section>
 
 
-  <script src="script.js"></script>
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
 
-  <!-- Kalau mau liat di local. Di terminal type open index.html -->
+  <!-- Jalankan website melalui Flask: py app.py -->
 
 </body>
 </html>
