@@ -1,218 +1,342 @@
 """
-Benchmark komparatif cipher: AES-GCM, DES-CBC+HMAC, RC4+HMAC.
+Benchmark komparatif cipher di Nestiefy: AES-GCM, DES-CBC+HMAC, RC4+HMAC.
 
-Metrik:
-- Waktu enkripsi (median dari N repetisi)
-- Waktu dekripsi (median dari N repetisi)
-- Throughput (MB/s)
-- Overhead ciphertext (byte & %)
-- Verifikasi integritas (hash SHA256 plaintext)
+APA YANG DIUKUR
+1. Waktu enkripsi & dekripsi end-to-end lewat crypto.encrypt_file / decrypt_file.
+   Ini SAMA dengan yang dijalankan aplikasi saat upload/download, yaitu:
+     - generate data key acak per file
+     - enkripsi/dekripsi isi file
+     - tag integritas (GCM tag untuk AES, HMAC-SHA256 untuk DES & RC4)
+     - SHA-256 plaintext (verifikasi kedua)
+     - wrap/unwrap data key dengan master key
+   I/O disk & jaringan TIDAK diukur (supaya yang terbandingkan murni kriptografinya).
+2. Throughput (MB/s) = ukuran plaintext / median waktu.
+3. Overhead penyimpanan:
+     - ciphertext : selisih ukuran file .enc vs file asli (padding)
+     - metadata   : IV/nonce + tag + wrapped key + IV wrap yang disimpan di database
+4. Deteksi manipulasi: 1 bit ciphertext dibalik -> dekripsi HARUS ditolak.
+5. Breakdown komponen (ukuran 10 MB): cipher murni vs HMAC-SHA256 vs SHA-256,
+   untuk menjelaskan DARI MANA waktu berasal.
 
-Output:
-- Tabel konsol (siap di-copy ke laporan)
-- CSV di benchmark_results.csv
+METODOLOGI
+- Data uji acak (os.urandom) -> tidak bisa dikompresi, mewakili PDF/JPG/MP4.
+- Warm-up dulu (hasil dibuang) untuk menghindari efek cold start.
+- Garbage collector dimatikan saat pengukuran supaya tidak muncul jeda acak.
+- Median dari N repetisi (tahan outlier) + IQR (P25-P75) sebagai ukuran sebaran.
+- Ukuran 100 MB mewakili video; repetisinya lebih sedikit supaya waktu total wajar.
+- Spesifikasi mesin disimpan di benchmark_env.txt -> wajib dicantumkan di laporan.
 
-Catatan metodologi:
-- Ukur hanya operasi kripto (bukan I/O file)
-- Median dari N repetisi (bukan mean) untuk menghindari outlier
-- Warm-up sebelum ukur (hindari cold-start)
-- Tidak termasuk waktu wrapping key (sudah dihitung di dalam crypto.py)
+CARA PAKAI
+    python benchmark.py            # lengkap (beberapa menit, sampai 100 MB)
+    python benchmark.py --quick    # cepat, untuk cek skrip jalan (tanpa 100 MB)
+
+OUTPUT
+    benchmark_results.csv   hasil per cipher x ukuran
+    benchmark_env.txt       spesifikasi mesin & versi library
 """
 
+import argparse
+import csv
+import gc
+import hashlib
+import hmac
 import os
-import time
+import platform
 import secrets
 import statistics
-import csv
+import sys
+import time
+from importlib.metadata import version, PackageNotFoundError
 from pathlib import Path
 
-# Set environment variable jika belum ada (untuk CI/otomasi)
-if not os.environ.get("FLASK_SECRET_KEY"):
-    os.environ["FLASK_SECRET_KEY"] = secrets.token_hex(32)
+# Benchmark tidak butuh .env asli. Kalau master key belum ada, pakai key acak
+# sementara (hanya hidup selama skrip berjalan, tidak disimpan ke mana pun).
+os.environ.setdefault("MASTER_KEY_AES", secrets.token_hex(32))
 
-# Harus set master key sebelum import crypto
-if not os.environ.get("MASTER_KEY_AES"):
-    os.environ["MASTER_KEY_AES"] = secrets.token_hex(32)
+import crypto  # noqa: E402  (harus setelah master key diset)
+from Crypto.Cipher import AES, DES, ARC4  # noqa: E402
+from Crypto.Util.Padding import pad  # noqa: E402
 
-import crypto
-
-
-# Konfigurasi
-FILE_SIZES_BYTES = [
-    ("1 KB", 1 * 1024),
-    ("10 KB", 10 * 1024),
-    ("100 KB", 100 * 1024),
-    ("1 MB", 1 * 1024 * 1024),
-    ("10 MB", 10 * 1024 * 1024),
-]
-
+BASE_DIR = Path(__file__).resolve().parent
 CIPHERS = ["AES", "DES", "RC4"]
+CIPHER_LABEL = {"AES": "AES-256-GCM", "DES": "DES-CBC+HMAC", "RC4": "RC4+HMAC"}
 
-# Jumlah repetisi per kombinasi (cipher × ukuran)
-# Makin tinggi = makin stabil, tapi makan waktu
-# 20 = trade-off baik untuk benchmark lokal
-REPETITIONS = 20
+MB = 1024 * 1024
 
-# Rounds warm-up (dibuang dari hasil)
-WARMUP_ROUNDS = 3
+# (label, ukuran byte, jumlah repetisi)
+SIZES_FULL = [
+    ("1 KB", 1024, 50),
+    ("10 KB", 10 * 1024, 50),
+    ("100 KB", 100 * 1024, 30),
+    ("1 MB", 1 * MB, 20),
+    ("10 MB", 10 * MB, 10),
+    ("100 MB", 100 * MB, 3),     # mewakili video
+]
+SIZES_QUICK = [
+    ("1 KB", 1024, 10),
+    ("100 KB", 100 * 1024, 5),
+    ("10 MB", 10 * MB, 3),
+]
+WARMUP_ROUNDS = 2
+
+# Ukuran video untuk estimasi di bagian interpretasi
+VIDEO_ESTIMATE_MB = 200
 
 
-# Core benchmark
-def benchmark_one(cipher_name: str, plaintext: bytes, repetitions: int) -> dict:
-    """
-    Benchmark satu kombinasi (cipher, ukuran).
-    Return dict berisi median enkripsi, dekripsi, throughput, ukuran.
-    """
-    enc_times = []
-    dec_times = []
-    ciphertext_sizes = []
+# ----------------------------------------------------------------------------
+# Helper statistik & format
+# ----------------------------------------------------------------------------
+def percentile(values, p):
+    """Persentil sederhana (interpolasi linear), p dalam 0..100."""
+    data = sorted(values)
+    if len(data) == 1:
+        return data[0]
+    k = (len(data) - 1) * p / 100
+    lo, hi = int(k), min(int(k) + 1, len(data) - 1)
+    return data[lo] + (data[hi] - data[lo]) * (k - lo)
 
-    # Warm-up (buang hasil)
+
+def timed(fn):
+    """Jalankan fn() dan kembalikan (hasil, durasi_ms)."""
+    t0 = time.perf_counter()
+    result = fn()
+    return result, (time.perf_counter() - t0) * 1000
+
+
+def fmt_ms(ms):
+    return f"{ms / 1000:.2f} s" if ms >= 1000 else f"{ms:.2f} ms"
+
+
+# ----------------------------------------------------------------------------
+# 1. Benchmark end-to-end (sama dengan alur upload/download aplikasi)
+# ----------------------------------------------------------------------------
+def benchmark_one(cipher, plaintext, repetitions):
     for _ in range(WARMUP_ROUNDS):
-        blob = crypto.encrypt_file(plaintext, cipher_name)
-        crypto.decrypt_file(blob, cipher_name)
+        crypto.decrypt_file(crypto.encrypt_file(plaintext, cipher), cipher)
 
-    # Ukur
-    for _ in range(repetitions):
-        # Enkripsi
-        t0 = time.perf_counter()
-        blob = crypto.encrypt_file(plaintext, cipher_name)
-        t1 = time.perf_counter()
-        enc_times.append((t1 - t0) * 1000)  # ms
-        ciphertext_sizes.append(len(blob["ciphertext"]))
+    enc_times, dec_times = [], []
+    gc.disable()
+    try:
+        for _ in range(repetitions):
+            blob, t_enc = timed(lambda: crypto.encrypt_file(plaintext, cipher))
+            recovered, t_dec = timed(lambda: crypto.decrypt_file(blob, cipher))
+            if recovered != plaintext:
+                raise RuntimeError(f"{cipher}: hasil dekripsi tidak sama dengan plaintext!")
+            enc_times.append(t_enc)
+            dec_times.append(t_dec)
+    finally:
+        gc.enable()
 
-        # Dekripsi
-        t0 = time.perf_counter()
-        recovered = crypto.decrypt_file(blob, cipher_name)
-        t1 = time.perf_counter()
-        dec_times.append((t1 - t0) * 1000)
-
-        # Sanity check (pastikan file kembali utuh)
-        if recovered != plaintext:
-            raise RuntimeError(f"Integritas gagal untuk {cipher_name}!")
-
-    enc_median = statistics.median(enc_times)
-    dec_median = statistics.median(dec_times)
-    ct_size = statistics.median(ciphertext_sizes)
-
-    plaintext_mb = len(plaintext) / (1024 * 1024)
-    enc_throughput = plaintext_mb / (enc_median / 1000) if enc_median > 0 else 0
-    dec_throughput = plaintext_mb / (dec_median / 1000) if dec_median > 0 else 0
-
-    overhead_bytes = ct_size - len(plaintext)
-    overhead_pct = (overhead_bytes / len(plaintext) * 100) if plaintext else 0
+    size_mb = len(plaintext) / MB
+    enc_med = statistics.median(enc_times)
+    dec_med = statistics.median(dec_times)
+    ct_overhead = len(blob["ciphertext"]) - len(plaintext)
+    meta_bytes = (len(blob["iv_or_nonce"]) + len(blob["auth_tag"])
+                  + len(blob["wrapped_key"]) + len(blob["key_wrap_iv"]))
 
     return {
-        "enc_ms": enc_median,
-        "dec_ms": dec_median,
-        "enc_throughput_mbps": enc_throughput,
-        "dec_throughput_mbps": dec_throughput,
+        "cipher": cipher,
         "plaintext_bytes": len(plaintext),
-        "ciphertext_bytes": ct_size,
-        "overhead_bytes": overhead_bytes,
-        "overhead_pct": overhead_pct,
+        "repetitions": repetitions,
+        "enc_ms_median": enc_med,
+        "enc_ms_p25": percentile(enc_times, 25),
+        "enc_ms_p75": percentile(enc_times, 75),
+        "dec_ms_median": dec_med,
+        "dec_ms_p25": percentile(dec_times, 25),
+        "dec_ms_p75": percentile(dec_times, 75),
+        "enc_mb_per_s": size_mb / (enc_med / 1000),
+        "dec_mb_per_s": size_mb / (dec_med / 1000),
+        "ciphertext_overhead_bytes": ct_overhead,
+        "metadata_bytes": meta_bytes,
     }
 
 
-# Format helpers
-def format_bytes(b: int) -> str:
-    if b < 1024:
-        return f"{b} B"
-    if b < 1024 * 1024:
-        return f"{b / 1024:.1f} KB"
-    return f"{b / (1024 * 1024):.2f} MB"
+# ----------------------------------------------------------------------------
+# 2. Deteksi manipulasi: balik 1 bit ciphertext -> harus ditolak
+# ----------------------------------------------------------------------------
+def tamper_test(cipher):
+    plaintext = os.urandom(4096)
+    blob = crypto.encrypt_file(plaintext, cipher)
+    corrupted = bytearray(blob["ciphertext"])
+    corrupted[len(corrupted) // 2] ^= 0x01
+    blob["ciphertext"] = bytes(corrupted)
+    try:
+        crypto.decrypt_file(blob, cipher)
+    except Exception as exc:
+        return True, type(exc).__name__
+    return False, "-"
 
 
-def print_table(results: list):
-    """Cetak tabel hasil di konsol (format siap-copy ke laporan)."""
-    print("BENCHMARK RESULTS — AES-GCM vs DES-CBC+HMAC vs RC4+HMAC")
-    header = (
-        f"{'Cipher':<6} {'Size':<8} "
-        f"{'Enc (ms)':>10} {'Dec (ms)':>10} "
-        f"{'Enc MB/s':>10} {'Dec MB/s':>10} "
-        f"{'CT Size':>12} {'Overhead':>15}"
-    )
-    print(header)
-    print("-" * 110)
-    for row in results:
-        print(
-            f"{row['cipher']:<6} {row['size_label']:<8} "
-            f"{row['enc_ms']:>10.2f} {row['dec_ms']:>10.2f} "
-            f"{row['enc_throughput_mbps']:>10.1f} {row['dec_throughput_mbps']:>10.1f} "
-            f"{format_bytes(row['ciphertext_bytes']):>12} "
-            f"{row['overhead_bytes']:>+7} B ({row['overhead_pct']:>+5.2f}%)"
-        )
-    print("=" * 110)
+# ----------------------------------------------------------------------------
+# 3. Breakdown komponen pada 10 MB (cipher murni vs biaya integritas)
+# ----------------------------------------------------------------------------
+def component_breakdown(size=10 * MB, repetitions=5):
+    data = os.urandom(size)
+    k32, k8 = os.urandom(32), os.urandom(8)
+    tasks = {
+        "AES-256-GCM (enkripsi + tag)": lambda: AES.new(k32, AES.MODE_GCM, nonce=os.urandom(12)).encrypt_and_digest(data),
+        "DES-CBC (enkripsi saja)": lambda: DES.new(k8, DES.MODE_CBC, iv=os.urandom(8)).encrypt(pad(data, 8)),
+        "RC4 (enkripsi saja)": lambda: ARC4.new(k32).encrypt(data),
+        "HMAC-SHA256 (untuk DES & RC4)": lambda: hmac.new(k32, data, hashlib.sha256).digest(),
+        "SHA-256 plaintext (semua cipher)": lambda: hashlib.sha256(data).digest(),
+    }
+    results = {}
+    for name, fn in tasks.items():
+        fn()  # warm-up
+        gc.disable()
+        try:
+            times = [timed(fn)[1] for _ in range(repetitions)]
+        finally:
+            gc.enable()
+        results[name] = (size / MB) / (statistics.median(times) / 1000)
+    return results
 
 
-def write_csv(results: list, path: Path):
-    """Tulis hasil ke CSV untuk diolah lebih lanjut / lampiran laporan."""
-    fieldnames = [
-        "cipher", "size_label", "plaintext_bytes", "ciphertext_bytes",
-        "overhead_bytes", "overhead_pct",
-        "enc_ms", "dec_ms", "enc_throughput_mbps", "dec_throughput_mbps",
-    ]
+# ----------------------------------------------------------------------------
+# Info mesin (wajib dicantumkan di laporan)
+# ----------------------------------------------------------------------------
+def environment_info():
+    def pkg(name):
+        try:
+            return version(name)
+        except PackageNotFoundError:
+            return "tidak terdeteksi"
+
+    return {
+        "OS": f"{platform.system()} {platform.release()} ({platform.machine()})",
+        "CPU": platform.processor() or "tidak terdeteksi (isi manual)",
+        "Python": sys.version.split()[0],
+        "pycryptodome": pkg("pycryptodome"),
+        "Waktu": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+# ----------------------------------------------------------------------------
+# Output
+# ----------------------------------------------------------------------------
+def print_table(results):
+    print("\n" + "=" * 118)
+    print("HASIL BENCHMARK END-TO-END (median; IQR = rentang P25-P75)")
+    print("=" * 118)
+    print(f"{'Cipher':<14}{'Ukuran':<9}{'Rep':>4}  {'Enkripsi':>10} {'IQR enc':>19}  "
+          f"{'Dekripsi':>10}  {'Enc MB/s':>9} {'Dec MB/s':>9}  {'+CT':>4} {'+Meta':>6}")
+    print("-" * 118)
+    for r in results:
+        iqr = f"{r['enc_ms_p25']:.2f}-{r['enc_ms_p75']:.2f} ms"
+        print(f"{CIPHER_LABEL[r['cipher']]:<14}{r['size_label']:<9}{r['repetitions']:>4}  "
+              f"{fmt_ms(r['enc_ms_median']):>10} {iqr:>19}  {fmt_ms(r['dec_ms_median']):>10}  "
+              f"{r['enc_mb_per_s']:>9.1f} {r['dec_mb_per_s']:>9.1f}  "
+              f"{r['ciphertext_overhead_bytes']:>3}B {r['metadata_bytes']:>5}B")
+    print("-" * 118)
+    print("+CT   = tambahan ukuran file .enc dibanding file asli (padding)")
+    print("+Meta = IV/nonce + tag + wrapped key + IV wrap yang disimpan di database per file")
+
+
+def write_csv(results, path):
+    fields = ["cipher", "size_label", "plaintext_bytes", "repetitions",
+              "enc_ms_median", "enc_ms_p25", "enc_ms_p75",
+              "dec_ms_median", "dec_ms_p25", "dec_ms_p75",
+              "enc_mb_per_s", "dec_mb_per_s",
+              "ciphertext_overhead_bytes", "metadata_bytes"]
     with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
-        for row in results:
-            writer.writerow({k: row[k] for k in fieldnames})
-    print(f"\n[✓] CSV tersimpan di: {path}")
+        for r in results:
+            writer.writerow({k: r[k] for k in fields})
 
 
-def print_interpretation(results: list):
-    """Cetak interpretasi hasil — langsung siap di-copy ke laporan."""
-    print("INTERPRETASI (siap di-copy ke laporan)")
+def print_interpretation(results, sizes, tamper, breakdown):
+    print("\n" + "=" * 118)
+    print("INTERPRETASI (bahan laporan - tetap periksa & tulis ulang dengan kata-kata sendiri)")
+    print("=" * 118)
 
-    # Kelompokkan per cipher
-    by_cipher = {c: [r for r in results if r["cipher"] == c] for c in CIPHERS}
+    get = {(r["cipher"], r["size_label"]): r for r in results}
+    labels = [s[0] for s in sizes]
 
-    # Rasio throughput di ukuran terbesar
-    largest_label = FILE_SIZES_BYTES[-1][0]
-    largest = {c: next(r for r in by_cipher[c] if r["size_label"] == largest_label) for c in CIPHERS}
+    # a. Cipher tercepat per ukuran
+    print("\n[a] Cipher tercepat (enkripsi) per ukuran file:")
+    for label in labels:
+        ranking = sorted(CIPHERS, key=lambda c: get[(c, label)]["enc_ms_median"])
+        best, second = ranking[0], ranking[1]
+        ratio = get[(second, label)]["enc_ms_median"] / get[(best, label)]["enc_ms_median"]
+        order = " < ".join(f"{c} {fmt_ms(get[(c, label)]['enc_ms_median'])}" for c in ranking)
+        print(f"    {label:<7}: {order}   ({best} {ratio:.1f}x lebih cepat dari {second})")
 
-    a_enc = largest["AES"]["enc_throughput_mbps"]
-    d_enc = largest["DES"]["enc_throughput_mbps"]
-    r_enc = largest["RC4"]["enc_throughput_mbps"]
+    # b. Perbandingan di ukuran terbesar (rasio dihitung dengan arah yang benar)
+    largest = labels[-1]
+    tp = {c: get[(c, largest)]["enc_mb_per_s"] for c in CIPHERS}
+    fastest = max(tp, key=tp.get)
+    print(f"\n[b] Throughput enkripsi pada {largest}:")
+    for c in sorted(CIPHERS, key=tp.get, reverse=True):
+        note = "tercepat" if c == fastest else f"{tp[fastest] / tp[c]:.1f}x lebih lambat dari {fastest}"
+        print(f"    {CIPHER_LABEL[c]:<14}: {tp[c]:>8.1f} MB/s  ({note})")
 
-    print(f"\n[Throughput enkripsi pada {largest_label} plaintext]")
-    print(f"  AES-GCM   : {a_enc:>10.1f} MB/s")
-    print(f"  DES-CBC   : {d_enc:>10.1f} MB/s  (≈ AES × {a_enc / d_enc:.1f} lebih lambat)")
-    print(f"  RC4+HMAC  : {r_enc:>10.1f} MB/s  (≈ AES × {r_enc / a_enc:.1f} lebih cepat)")
+    # c. Estimasi untuk skenario (dokumen kecil vs video)
+    print(f"\n[c] Estimasi waktu enkripsi untuk skenario Nestiefy (dari throughput {largest}):")
+    for name, size_mb in [("Scan KTP / PDF ~500 KB", 0.5), (f"Video kamar ~{VIDEO_ESTIMATE_MB} MB", VIDEO_ESTIMATE_MB)]:
+        parts = ", ".join(f"{c} {fmt_ms(size_mb / tp[c] * 1000)}" for c in CIPHERS)
+        print(f"    {name:<26}: {parts}")
 
-    print(f"\n[Overhead ciphertext]")
+    # d. Breakdown komponen
+    print("\n[d] Breakdown komponen pada 10 MB (MB/s, makin besar makin cepat):")
+    for name, mbps in breakdown.items():
+        print(f"    {name:<34}: {mbps:>8.1f} MB/s")
+    print("    -> DES & RC4 perlu 2 lintasan tambahan (HMAC + SHA-256) di atas cipher-nya;")
+    print("       AES-GCM sudah menghasilkan tag integritas dalam satu lintasan.")
+
+    # e. Overhead penyimpanan
+    print("\n[e] Overhead penyimpanan per file:")
     for c in CIPHERS:
-        row = largest[c]
-        print(f"  {c:<4}: {row['overhead_bytes']:>+7} B ({row['overhead_pct']:>+5.2f}%)")
+        r = get[(c, largest)]
+        print(f"    {CIPHER_LABEL[c]:<14}: file .enc +{r['ciphertext_overhead_bytes']} B, "
+              f"metadata DB {r['metadata_bytes']} B")
+
+    # f. Deteksi manipulasi
+    print("\n[f] Deteksi manipulasi (1 bit ciphertext dibalik):")
+    for c in CIPHERS:
+        ok, err = tamper[c]
+        print(f"    {CIPHER_LABEL[c]:<14}: {'DITOLAK (benar)' if ok else 'TIDAK TERDETEKSI (masalah!)'}  [{err}]")
 
 
+# ----------------------------------------------------------------------------
 # Main
+# ----------------------------------------------------------------------------
 def main():
-    print("[i] Menyiapkan data uji...")
-    rng = secrets.SystemRandom()
+    parser = argparse.ArgumentParser(description="Benchmark cipher Nestiefy")
+    parser.add_argument("--quick", action="store_true", help="mode cepat untuk uji skrip")
+    args = parser.parse_args()
+    sizes = SIZES_QUICK if args.quick else SIZES_FULL
+
+    env = environment_info()
+    print("Spesifikasi mesin:")
+    for k, v in env.items():
+        print(f"  {k:<13}: {v}")
+    print("\nTutup aplikasi berat lain & colok charger laptop supaya hasil stabil.")
 
     results = []
-
-    for size_label, size_bytes in FILE_SIZES_BYTES:
-        print(f"\n[i] Ukuran {size_label} ({size_bytes} byte)")
-
-        # Generate plaintext acak sekali per ukuran (dipakai untuk semua cipher)
-        plaintext = bytes(rng.getrandbits(8) for _ in range(size_bytes))
-
-        for cipher_name in CIPHERS:
-            print(f"    → {cipher_name} ({REPETITIONS} repetisi)...", end=" ", flush=True)
-            row = benchmark_one(cipher_name, plaintext, REPETITIONS)
-            row["cipher"] = cipher_name
-            row["size_label"] = size_label
+    for label, size, reps in sizes:
+        plaintext = os.urandom(size)
+        print(f"\n[{label}] {reps} repetisi per cipher")
+        for cipher in CIPHERS:
+            print(f"  {CIPHER_LABEL[cipher]:<14} ...", end=" ", flush=True)
+            row = benchmark_one(cipher, plaintext, reps)
+            row["size_label"] = label
             results.append(row)
-            print(f"enc {row['enc_ms']:.2f} ms, dec {row['dec_ms']:.2f} ms")
+            print(f"enc {fmt_ms(row['enc_ms_median'])}, dec {fmt_ms(row['dec_ms_median'])}")
+
+    print("\nMengukur komponen & deteksi manipulasi ...")
+    breakdown = component_breakdown()
+    tamper = {c: tamper_test(c) for c in CIPHERS}
 
     print_table(results)
+    print_interpretation(results, sizes, tamper, breakdown)
 
-    csv_path = Path(__file__).resolve().parent / "benchmark_results.csv"
+    csv_path = BASE_DIR / "benchmark_results.csv"
     write_csv(results, csv_path)
-
-    print_interpretation(results)
+    env_path = BASE_DIR / "benchmark_env.txt"
+    env_path.write_text("\n".join(f"{k}: {v}" for k, v in env.items()) + "\n", encoding="utf-8")
+    print(f"\n[OK] Hasil   : {csv_path.name}")
+    print(f"[OK] Mesin   : {env_path.name}  (cantumkan di laporan)")
 
 
 if __name__ == "__main__":

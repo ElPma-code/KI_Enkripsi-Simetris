@@ -1,0 +1,5 @@
+OS: Windows 11 (AMD64)
+CPU: Intel64 Family 6 Model 142 Stepping 12, GenuineIntel
+Python: 3.13.0
+pycryptodome: 4.2.0
+Waktu: 2026-10-26 01:38:40
