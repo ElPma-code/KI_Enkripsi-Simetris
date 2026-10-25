@@ -1,0 +1,55 @@
+{# ==================== TENANT DOCUMENTS (khusus landlord) ====================
+ Dipanggil dari view "Tenant Documents" di dashboard.html
+ Variabel dari app.py: tenant_documents, tenant_count #}
+
+{% if tenant_documents %}
+  <div class="bg-surface rounded-2xl border border-line overflow-hidden">
+    <table class="w-full text-left border-collapse">
+      <thead>
+        <tr class="bg-cream border-b border-line text-sm text-muted">
+          <th class="py-4 px-6 font-semibold">Name</th>
+          <th class="py-4 px-6 font-semibold">Tenant</th>
+          <th class="py-4 px-6 font-semibold">Category</th>
+          <th class="py-4 px-6 font-semibold">Size</th>
+          <th class="py-4 px-6 font-semibold">Uploaded</th>
+          <th class="py-4 px-6 font-semibold">Cipher</th>
+          <th class="py-4 px-6 font-semibold text-right"></th>
+        </tr>
+      </thead>
+      <tbody class="text-sm">
+        {% for doc in tenant_documents %}
+        <tr class="{{ 'border-b border-line' if not loop.last }} hover:bg-cream transition-colors">
+          <td class="py-4 px-6 font-medium text-ink">{{ doc.original_name }}</td>
+          <td class="py-4 px-6 text-muted">{{ doc.tenant_email }}</td>
+          <td class="py-4 px-6 text-muted">{{ doc.category }}</td>
+          <td class="py-4 px-6 text-muted">
+            {% if doc.size_bytes < 1024 * 1024 %}
+              {{ (doc.size_bytes / 1024) | round | int }} KB
+            {% else %}
+              {{ '%.1f' | format(doc.size_bytes / (1024 * 1024)) }} MB
+            {% endif %}
+          </td>
+          <td class="py-4 px-6 text-muted">{{ doc.created_at[:16] }}</td>
+          <td class="py-4 px-6">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium text-primary bg-primary/10">
+              <span class="w-1.5 h-1.5 rounded-full bg-primary"></span> {{ doc.cipher }}
+            </span>
+          </td>
+          <td class="py-4 px-6 text-right">
+            {# Landlord hanya bisa download, tidak bisa delete #}
+            <a href="{{ url_for('download_document', doc_id=doc.id) }}"
+               class="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary-hover">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              Download
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="bg-surface rounded-2xl border border-line p-10 text-center">
+    <p class="text-sm text-muted">Belum ada dokumen dari tenant.</p>
+  </div>
+{% endif %}

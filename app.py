@@ -12,7 +12,7 @@ from flask import (
 )
 from argon2.exceptions import VerifyMismatchError, VerificationError
 
-from database import DB_PATH, password_hasher
+from database import password_hasher, get_connection
 import crypto
 
 app = Flask(__name__)
@@ -61,10 +61,9 @@ def login():
     email = request.form.get("email", "").strip().lower()
     password = request.form.get("password", "")
 
-    connection = sqlite3.connect(DB_PATH)
+    connection = get_connection()
 
     try:
-        connection.row_factory = sqlite3.Row
 
         user = connection.execute(
             "SELECT * FROM users WHERE email = ?",
@@ -99,9 +98,8 @@ def dashboard():
     if user_id is None:
         return redirect(url_for("login"))
 
-    connection = sqlite3.connect(DB_PATH)
+    connection = get_connection()
     try:
-        connection.row_factory = sqlite3.Row
         user = connection.execute(
             "SELECT id, email, role FROM users WHERE id = ?", (user_id,)
         ).fetchone()
@@ -126,7 +124,7 @@ def dashboard():
         recent = connection.execute(
             """
             SELECT id, original_name, category, mime_type, size_bytes,
-                   cipher, created_at
+                   cipher, datetime(created_at, 'localtime') AS created_at
             FROM documents
             WHERE user_id = ?
             ORDER BY created_at DESC
@@ -134,6 +132,28 @@ def dashboard():
             """,
             (user_id,)
         ).fetchall()
+
+        # Khusus landlord: semua dokumen milik tenant-nya (opsi A)
+        tenant_documents = []
+        tenant_count = 0
+        if user["role"] == "landlord":
+            tenant_documents = connection.execute(
+                """
+                SELECT d.id, d.original_name, d.category, d.mime_type,
+                       d.size_bytes, d.cipher, datetime(d.created_at, 'localtime') AS created_at,
+                       u.email AS tenant_email
+                FROM documents d
+                JOIN users u ON u.id = d.user_id
+                WHERE u.landlord_id = ?
+                ORDER BY d.created_at DESC
+                """,
+                (user_id,)
+            ).fetchall()
+
+            tenant_count = connection.execute(
+                "SELECT COUNT(*) FROM users WHERE landlord_id = ?",
+                (user_id,)
+            ).fetchone()[0]
     finally:
         connection.close()
 
@@ -144,6 +164,8 @@ def dashboard():
         total_files=total_files,
         stats_by_cipher=stats_by_cipher,
         recent_documents=recent,
+        tenant_documents=tenant_documents,
+        tenant_count=tenant_count,
     )
 
 # Upload & enkripsi
@@ -171,6 +193,7 @@ def upload_document():
     if not category:
         return _upload_error("Category wajib dipilih.")
 
+    # Pastikan nama file tetap punya ekstensi aslinya (.pdf, .jpg, dst.)
     original_ext = Path(file.filename).suffix
     if not file_name:
         file_name = file.filename
@@ -193,7 +216,7 @@ def upload_document():
     target.write_bytes(blob["ciphertext"])
 
     # Insert metadata ke DB
-    connection = sqlite3.connect(DB_PATH)
+    connection = get_connection()
     try:
         connection.execute(
             """
@@ -236,17 +259,26 @@ def download_document(doc_id: int):
     if user_id is None:
         return redirect(url_for("login"))
 
-    connection = sqlite3.connect(DB_PATH)
+    connection = get_connection()
     try:
-        connection.row_factory = sqlite3.Row
+        # Boleh download kalau:
+        # 1. dokumen ini milik user yang login, ATAU
+        # 2. user yang login adalah landlord dari pemilik dokumen (opsi A)
         doc = connection.execute(
-            "SELECT * FROM documents WHERE id = ?", (doc_id,)
+            """
+            SELECT d.*
+            FROM documents d
+            JOIN users owner ON owner.id = d.user_id
+            WHERE d.id = ?
+              AND (d.user_id = ? OR owner.landlord_id = ?)
+            """,
+            (doc_id, user_id, user_id)
         ).fetchone()
     finally:
         connection.close()
 
-    # Anti-enumeration: file orang lain = 404, bukan 403
-    if doc is None or doc["user_id"] != user_id:
+    # Anti-enumeration: tidak berhak = 404, bukan 403
+    if doc is None:
         abort(404)
 
     target = ENCRYPTED_FILES_DIR / doc["stored_name"]
@@ -291,9 +323,8 @@ def delete_document(doc_id: int):
     if not expected or not secrets.compare_digest(token, expected):
         abort(400)
 
-    connection = sqlite3.connect(DB_PATH)
+    connection = get_connection()
     try:
-        connection.row_factory = sqlite3.Row
         doc = connection.execute(
             "SELECT * FROM documents WHERE id = ?", (doc_id,)
         ).fetchone()

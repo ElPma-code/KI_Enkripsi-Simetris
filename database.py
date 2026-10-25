@@ -14,6 +14,17 @@ ENV_PATH = BASE_DIR / ".env"
 password_hasher = PasswordHasher()
 
 
+def get_connection():
+    """Buka koneksi ke database.
+    - row_factory = sqlite3.Row  -> kolom bisa diakses pakai nama, mis. row["email"]
+    - PRAGMA foreign_keys = ON   -> wajib di SQLite agar ON DELETE CASCADE benar-benar jalan
+    """
+    connection = sqlite3.connect(DB_PATH)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    return connection
+
+
 def init_env():
     """Buat file .env berisi key acak kalau belum ada.
     Kalau .env sudah ada, tidak diubah (supaya file lama tetap bisa didekripsi)."""
@@ -41,9 +52,21 @@ def init_db():
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL
-                    CHECK (role IN ('tenant', 'landlord'))
+                    CHECK (role IN ('tenant', 'landlord')),
+                -- Untuk tenant: id landlord pemilik properti yang ia sewa.
+                -- Untuk landlord: NULL.
+                landlord_id INTEGER REFERENCES users(id) ON DELETE SET NULL
             )
         """)
+
+        # Migrasi untuk database lama yang belum punya kolom landlord_id
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(users)")]
+        if "landlord_id" not in columns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN landlord_id INTEGER "
+                "REFERENCES users(id) ON DELETE SET NULL"
+            )
+            print("Kolom landlord_id ditambahkan ke tabel users.")
 
         connection.execute("""
             CREATE TABLE IF NOT EXISTS documents (
@@ -110,6 +133,17 @@ def seed_users():
             )
 
             print(f"Akun {email} berhasil dibuat.")
+
+        # Hubungkan tenant dummy dengan landlord dummy (opsi A:
+        # landlord bisa melihat semua dokumen milik tenant-nya)
+        connection.execute(
+            """
+            UPDATE users
+            SET landlord_id = (SELECT id FROM users WHERE email = ?)
+            WHERE email = ? AND landlord_id IS NULL
+            """,
+            ("owner@test.com", "tenant@test.com")
+        )
 
         connection.commit()
     finally:
