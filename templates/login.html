@@ -13,15 +13,16 @@
   <!-- Tailwind CSS (CDN, tanpa build) -->
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 
-  <!-- Warna & font dari design.md (sama dengan index.html) -->
+  <!-- Warna & font (palette sama dengan dashboard.html) -->
   <style type="text/tailwindcss">
     @theme {
       --color-cream: #F7F3EA;
-      --color-primary: #005653;
-      --color-gold: #B39957;
-      --color-sage: #97B8BD;
-      --color-muted: #556D79;
-      --color-ink: #333F4D;
+      --color-primary: #133933;
+      --color-primary-hover: #1F4B42;
+      --color-gold: #C9A45C;
+      --color-sage: #B7C9BC;
+      --color-muted: #7D847F;
+      --color-ink: #1F2A24;
       --font-heading: "Bodoni Moda", serif;
       --font-body: "Montserrat", sans-serif;
     }
@@ -31,24 +32,13 @@
 
   <div class="flex min-h-screen">
 
-    <!-- ==================== KIRI: GAMBAR (placeholder) ==================== -->
+    <!-- ==================== KIRI: GAMBAR ==================== -->
     <!-- Disembunyikan di layar kecil, muncul mulai ukuran laptop (lg) -->
+    <!-- Gambar disimpan di: static/asset/login.jpg -->
     <div class="relative hidden overflow-hidden bg-primary lg:block lg:w-3/5">
-
-      <!-- Ganti placeholder di bawah dengan gambar asli, contoh:
-           <img src="assets/login.jpg" alt="" class="absolute inset-0 h-full w-full object-cover"> -->
-
-      <!-- Placeholder: gradasi hijau + garis cahaya miring -->
-      <div class="absolute inset-0 bg-gradient-to-br from-primary via-primary to-ink"></div>
-      <div class="absolute -left-1/4 -top-1/4 h-[150%] w-1/3 rotate-12 bg-white/5"></div>
-      <div class="absolute left-1/4 -top-1/4 h-[150%] w-1/6 rotate-12 bg-white/5"></div>
-
-      <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sage/70">
-        <svg class="h-12 w-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>
-        </svg>
-        <p class="text-xs uppercase tracking-[0.3em]">Image Placeholder</p>
-      </div>
+      <img src="{{ url_for('static', filename='assets/login.jpg') }}"
+           alt="Interior kamar sewa"
+           class="absolute inset-0 h-full w-full object-cover">
     </div>
 
     <!-- ==================== KANAN: FORM LOGIN ==================== -->
