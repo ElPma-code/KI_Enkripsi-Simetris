@@ -155,6 +155,39 @@ def init_db():
             )
         """)
 
+        # ===== Audit Log untuk akses dokumen bersama =====
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS access_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                request_id INTEGER
+                    REFERENCES access_requests(id)
+                    ON DELETE SET NULL,
+
+                user_id INTEGER
+                    REFERENCES users(id)
+                    ON DELETE SET NULL,
+
+                document_id INTEGER
+                    REFERENCES documents(id)
+                    ON DELETE SET NULL,
+
+                action TEXT NOT NULL
+                    CHECK (action IN (
+                        'unlock',
+                        'unlock_failed',
+                        'download'
+                    )),
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_access_logs_request
+            ON access_logs(request_id, created_at)
+        """)
+
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_requests_owner ON access_requests(owner_id, status)"
         )
