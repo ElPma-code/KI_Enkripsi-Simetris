@@ -67,6 +67,20 @@
       </div>
     </div>
 
+    <div class="grid h-[420px] grid-cols-1 gap-4 sm:grid-cols-[3fr_1fr] lg:h-[600px]">
+      <img src="{{ url_for('static', filename='assets/cozy home.jpeg') }}" alt="Cozy living room" class="h-full w-full object-cover">
+
+
+      <div class="hidden flex-col overflow-hidden rounded-t-full sm:flex">
+        <div class="flex flex-[1.5] flex-col justify-center bg-sage/25 px-6 pt-10">
+          <p class="font-heading text-2xl font-normal italic leading-snug text-ink">A<br>Safer<br>Place<br>to<br>Belong</p>
+          <span class="mt-4 block h-px w-8 bg-ink/40"></span>
+        </div>
+        <img src="{{ url_for('static', filename='assets/cozy green home.jpeg') }}" alt="Green living room" class="min-h-0 w-full flex-1 object-cover">
+        <img src="{{ url_for('static', filename='assets/cozy home beige.jpeg') }}" alt="Beige living room" class="min-h-0 w-full flex-1 object-cover">
+      </div>
+    </div>
+
   </main>
 
   <!-- Features -->

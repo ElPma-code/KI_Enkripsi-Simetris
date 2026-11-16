@@ -20,3 +20,9 @@ Push seluruh kode ke GitHub. Riwayat commit Anda akan digunakan untuk penilaian,
 Bagikan percakapan Anda dengan AI: sertakan tautan percakapan dan tangkapan layarnya dalam pengumpulan tugas. Jika Anda menggunakan AI, kami perlu melihat bagaimana Anda menggunakannya.
 Nilai diberikan berdasarkan kebenaran program dan kualitas penalaran Anda.
 Plagiarisme, termasuk konten hasil AI yang tidak diverifikasi, akan mendapat nilai 0.
+
+Link percakapan AI :
+https://chatgpt.com/share/6adf4f29-a0d0-83ec-a088-f1e2424d2933
+https://claude.ai/share/aab5100f-e7da-42d0-976b-75a0e558edaf
+https://chatgpt.com/share/6adf5e38-a864-83ec-a5b7-f73606255a94
+https://chat.deepseek.com/share/202tuuge3ba10oj6h4
