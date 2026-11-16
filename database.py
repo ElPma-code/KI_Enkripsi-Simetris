@@ -102,6 +102,66 @@ def init_db():
             connection.execute("ALTER TABLE documents ADD COLUMN original_name_enc BLOB")
             print("Kolom original_name_enc ditambahkan ke tabel documents.")
 
+        # ===== Fitur berbagi dokumen (request -> approve -> unlock) =====
+
+        # Keypair RSA-3072 per user. Dibuat otomatis saat login pertama
+        # (hanya saat login server tahu password untuk mengenkripsi private key).
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS user_keys (
+                user_id INTEGER PRIMARY KEY
+                    REFERENCES users(id) ON DELETE CASCADE,
+                public_pem TEXT NOT NULL,      -- boleh polos, memang publik
+                private_enc TEXT NOT NULL,     -- PKCS#8 terenkripsi password (scrypt + AES-256-CBC)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Satu baris = satu permintaan akses dari requester (A) ke owner (B, pemilik data)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS access_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                -- JSON list kategori yang diminta, mis. ["ID Document", "Payment Proof"].
+                -- A memilih KATEGORI, bukan dokumen: A tidak boleh melihat daftar dokumen B.
+                requested_categories TEXT NOT NULL,
+                message TEXT,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'approved', 'unlocked',
+                                      'rejected', 'revoked', 'expired')),
+                -- Diisi saat approve. K_share disimpan TERBUNGKUS master key (AES-GCM, AAD=id)
+                k_share_wrapped BLOB,
+                k_share_nonce BLOB,
+                -- Paket NSTFY1.<id>.<base64> (K_share terenkripsi RSA-OAEP untuk A).
+                -- Aman disimpan karena hanya bisa dibuka private key A.
+                package TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                decided_at TIMESTAMP,
+                expires_at TIMESTAMP,          -- UTC, format 'YYYY-MM-DD HH:MM:SS'
+                CHECK (requester_id != owner_id)
+            )
+        """)
+
+        # Dokumen yang DISETUJUI B, beserta data key yang di-rewrap ke K_share
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS share_grants (
+                request_id INTEGER NOT NULL
+                    REFERENCES access_requests(id) ON DELETE CASCADE,
+                document_id INTEGER NOT NULL
+                    REFERENCES documents(id) ON DELETE CASCADE,
+                rewrapped_key BLOB NOT NULL,   -- data key terbungkus K_share (AES-GCM)
+                rewrap_nonce BLOB NOT NULL,
+                PRIMARY KEY (request_id, document_id)
+            )
+        """)
+
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_requests_owner ON access_requests(owner_id, status)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_requests_requester ON access_requests(requester_id, status)"
+        )
+
         connection.commit()
     finally:
         connection.close()
