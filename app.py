@@ -13,9 +13,14 @@ from flask import (
 from argon2.exceptions import VerifyMismatchError, VerificationError
 
 from database import password_hasher, get_connection
+
 import crypto
+import access_requests
+import shared_access
 
 app = Flask(__name__)
+app.register_blueprint(access_requests.bp)
+app.register_blueprint(shared_access.bp)
 
 # Kunci untuk menandatangani cookie session Flask.
 # Simpan di environment variable, bukan source code.
@@ -100,6 +105,10 @@ def login():
             session.clear()
             session["user_id"] = user["id"]
 
+            # Password hanya tersedia di sini, jadi keypair RSA dibuat saat login
+            # (private key dienkripsi dengan password ini, lalu password dibuang).
+            access_requests.ensure_user_keypair(user["id"], password)
+
             return redirect(url_for("dashboard"))
 
     return render_template(
@@ -150,29 +159,16 @@ def dashboard():
             (user_id,)
         ).fetchall()
         recent = _with_plain_names(recent)
+        # Dokumen yang sudah dibagikan dan berhasil di-Unlock
+        shared_documents = shared_access.shared_context(
+            connection,
+            user_id
+        )
+        owner_access_logs = shared_access.owner_audit_context(
+            connection,
+            user_id
+        )
 
-        # Khusus landlord: semua dokumen milik tenant-nya (opsi A)
-        tenant_documents = []
-        tenant_count = 0
-        if user["role"] == "landlord":
-            tenant_documents = connection.execute(
-                """
-                SELECT d.id, d.original_name, d.original_name_enc, d.category, d.mime_type,
-                       d.size_bytes, d.cipher, datetime(d.created_at, 'localtime') AS created_at,
-                       u.email AS tenant_email
-                FROM documents d
-                JOIN users u ON u.id = d.user_id
-                WHERE u.landlord_id = ?
-                ORDER BY d.created_at DESC
-                """,
-                (user_id,)
-            ).fetchall()
-            tenant_documents = _with_plain_names(tenant_documents)
-
-            tenant_count = connection.execute(
-                "SELECT COUNT(*) FROM users WHERE landlord_id = ?",
-                (user_id,)
-            ).fetchone()[0]
     finally:
         connection.close()
 
@@ -183,8 +179,8 @@ def dashboard():
         total_files=total_files,
         stats_by_cipher=stats_by_cipher,
         recent_documents=recent,
-        tenant_documents=tenant_documents,
-        tenant_count=tenant_count,
+        shared_documents=shared_documents,
+        owner_access_logs=owner_access_logs,
     )
 
 # Upload & enkripsi
@@ -281,18 +277,15 @@ def download_document(doc_id: int):
 
     connection = get_connection()
     try:
-        # Boleh download kalau:
-        # 1. dokumen ini milik user yang login, ATAU
-        # 2. user yang login adalah landlord dari pemilik dokumen (opsi A)
+        # Download biasa hanya diperbolehkan untuk pemilik dokumen.
+        # Pengguna lain wajib melalui shared download dengan grant yang valid.
         doc = connection.execute(
             """
             SELECT d.*
             FROM documents d
-            JOIN users owner ON owner.id = d.user_id
-            WHERE d.id = ?
-              AND (d.user_id = ? OR owner.landlord_id = ?)
+            WHERE d.id = ? AND d.user_id = ?
             """,
-            (doc_id, user_id, user_id)
+            (doc_id, user_id)
         ).fetchone()
     finally:
         connection.close()

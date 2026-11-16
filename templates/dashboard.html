@@ -61,17 +61,6 @@
         Dashboard
       </a>
 
-      <!-- Tenant Documents: Khusus Landlord -->
-      {% if role == 'landlord' %}
-      <a href="#tenant-documents" data-view="tenant-documents"
-        class="nav-link group flex items-center gap-4 px-4 py-3 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors data-[active=true]:bg-primary-soft data-[active=true]:text-white">
-        <svg class="w-5 h-5 text-sage/70 group-data-[active=true]:text-sage" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
-        </svg>
-        Tenant Documents
-      </a>
-      {% endif %}
-
   <!-- Upload File: Tenant & Landlord -->
   <a href="#upload" data-view="upload"
      class="nav-link group flex items-center gap-4 px-4 py-3 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors data-[active=true]:bg-primary-soft data-[active=true]:text-white">
@@ -136,23 +125,6 @@
         <p class="text-muted text-sm font-medium">Here's an overview of your properties and tenant documents.</p>
         {% endif %}
       </div>
-
-      {% if role == 'landlord' %}
-      <!-- Ringkasan Tenant Documents -->
-      <a href="#tenant-documents" class="mb-10 bg-surface border border-line rounded-2xl p-6 flex items-center gap-5 hover:border-primary-hover/40 transition-colors">
-        <div class="w-12 h-12 flex-shrink-0 rounded-xl bg-gold/15 flex items-center justify-center text-gold">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
-        </div>
-        <div class="flex-1">
-          <h3 class="text-lg font-semibold text-ink mb-1">Tenant Documents</h3>
-          <p class="text-sm text-muted">{{ tenant_documents|length }} file dari {{ tenant_count }} tenant</p>
-        </div>
-        <span class="text-sm font-medium text-primary flex items-center gap-1">
-          View
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-        </span>
-      </a>
-      {% endif %}
 
       <!-- Stat Cards -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
@@ -274,19 +246,6 @@
         </div>
       </div>
     </section>
-
-    {% if role == 'landlord' %}
-    <!-- ==================== VIEW: TENANT DOCUMENTS (landlord) ==================== -->
-    <section id="view-tenant-documents" data-page class="hidden px-10 pb-12 max-w-6xl">
-      <div class="mb-8">
-        <h2 class="font-heading text-4xl font-bold text-primary mb-2">Tenant Documents</h2>
-        <p class="text-muted text-sm font-medium">
-          Semua dokumen yang diupload oleh tenant Anda &mdash; {{ tenant_documents|length }} file dari {{ tenant_count }} tenant.
-        </p>
-      </div>
-      {% include "tenant_documents.html" %}
-    </section>
-    {% endif %}
 
     <!-- ==================== VIEW: UPLOAD FILE ==================== -->
     <section id="view-upload" data-page class="hidden px-10 pb-12 max-w-6xl">
