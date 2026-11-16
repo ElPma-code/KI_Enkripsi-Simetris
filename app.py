@@ -168,6 +168,9 @@ def dashboard():
             connection,
             user_id
         )
+        # Data halaman Requests: incoming_requests, outgoing_requests,
+        # shareable_documents, request_categories, pending_incoming_count
+        inbox = access_requests.inbox_context(connection, user_id)
 
     finally:
         connection.close()
@@ -181,6 +184,7 @@ def dashboard():
         recent_documents=recent,
         shared_documents=shared_documents,
         owner_access_logs=owner_access_logs,
+        **inbox,
     )
 
 # Upload & enkripsi
