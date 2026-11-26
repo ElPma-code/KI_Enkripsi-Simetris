@@ -188,6 +188,51 @@ def init_db():
             ON access_logs(request_id, created_at)
         """)
 
+        # ===== Tugas 3: tanda tangan digital PDF =====
+
+        # Keypair KHUSUS tanda tangan, terpisah dari user_keys (Tugas 2, untuk enkripsi).
+        # Pemisahan kunci: kunci yang dipakai mendekripsi tidak dipakai juga untuk
+        # menandatangani, sehingga kompromi satu fungsi tidak otomatis membuka fungsi lain.
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS signing_keys (
+                user_id INTEGER PRIMARY KEY
+                    REFERENCES users(id) ON DELETE CASCADE,
+                public_pem TEXT NOT NULL,
+                private_enc TEXT NOT NULL,     -- PKCS#8 terenkripsi password user
+                certificate_der BLOB,          -- opsional: sertifikat self-signed (untuk CMS)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Satu baris = satu PDF yang sudah ditandatangani.
+        # PDF hasil tanda tangan disimpan sebagai dokumen BARU (terenkripsi seperti
+        # dokumen lain); PDF aslinya tidak diubah.
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS document_signatures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id INTEGER NOT NULL UNIQUE
+                    REFERENCES documents(id) ON DELETE CASCADE,     -- PDF bertanda tangan
+                source_document_id INTEGER
+                    REFERENCES documents(id) ON DELETE SET NULL,    -- PDF asli sebelum ditandatangani
+                signer_id INTEGER NOT NULL
+                    REFERENCES users(id) ON DELETE CASCADE,
+                -- Salinan public key SAAT tanda tangan dibuat, supaya tanda tangan lama
+                -- tetap bisa diverifikasi walaupun keypair user nanti diganti.
+                signer_public_pem TEXT NOT NULL,
+                sub_filter TEXT NOT NULL,      -- mis. /Nestiefy.rsa_sha256 atau /adbe.pkcs7.detached
+                byte_range TEXT NOT NULL,      -- JSON [0, a, b, c]
+                digest_sha256 TEXT NOT NULL,   -- hex SHA-256 dari bagian /ByteRange
+                signature BLOB NOT NULL,       -- raw PKCS#1 v1.5 (384 B) atau blob CMS
+                signed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP   -- klaim jam server (tanpa TSA)
+            )
+        """)
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_signatures_source ON document_signatures(source_document_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_signatures_signer ON document_signatures(signer_id)"
+        )
+
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_requests_owner ON access_requests(owner_id, status)"
         )
