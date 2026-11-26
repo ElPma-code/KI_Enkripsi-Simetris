@@ -240,6 +240,17 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_requests_requester ON access_requests(requester_id, status)"
         )
 
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS signature_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+                action TEXT NOT NULL CHECK(action IN ('sign', 'verify')),
+                result TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         connection.commit()
     finally:
         connection.close()
