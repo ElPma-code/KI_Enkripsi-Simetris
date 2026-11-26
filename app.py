@@ -17,10 +17,12 @@ from database import password_hasher, get_connection
 import crypto
 import access_requests
 import shared_access
+import signing_routes
 
 app = Flask(__name__)
 app.register_blueprint(access_requests.bp)
 app.register_blueprint(shared_access.bp)
+app.register_blueprint(signing_routes.bp)
 
 # Kunci untuk menandatangani cookie session Flask.
 # Simpan di environment variable, bukan source code.
@@ -103,11 +105,13 @@ def login():
 
         else:
             session.clear()
+            try:
+                access_requests.ensure_user_keypair(user["id"], password)
+                signing_routes.ensure_signing_keypair(user["id"], password)
+            except Exception:
+                app.logger.exception("Keypair initialization failed")
+                return render_template("login.html", error="Gagal menyiapkan kunci. Silakan coba lagi."), 503
             session["user_id"] = user["id"]
-
-            # Password hanya tersedia di sini, jadi keypair RSA dibuat saat login
-            # (private key dienkripsi dengan password ini, lalu password dibuang).
-            access_requests.ensure_user_keypair(user["id"], password)
 
             return redirect(url_for("dashboard"))
 
