@@ -102,6 +102,144 @@ def init_db():
             connection.execute("ALTER TABLE documents ADD COLUMN original_name_enc BLOB")
             print("Kolom original_name_enc ditambahkan ke tabel documents.")
 
+        # ===== Fitur berbagi dokumen (request -> approve -> unlock) =====
+
+        # Keypair RSA-3072 per user. Dibuat otomatis saat login pertama
+        # (hanya saat login server tahu password untuk mengenkripsi private key).
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS user_keys (
+                user_id INTEGER PRIMARY KEY
+                    REFERENCES users(id) ON DELETE CASCADE,
+                public_pem TEXT NOT NULL,      -- boleh polos, memang publik
+                private_enc TEXT NOT NULL,     -- PKCS#8 terenkripsi password (scrypt + AES-256-CBC)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Satu baris = satu permintaan akses dari requester (A) ke owner (B, pemilik data)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS access_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                -- JSON list kategori yang diminta, mis. ["ID Document", "Payment Proof"].
+                -- A memilih KATEGORI, bukan dokumen: A tidak boleh melihat daftar dokumen B.
+                requested_categories TEXT NOT NULL,
+                message TEXT,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'approved', 'unlocked',
+                                      'rejected', 'revoked', 'expired')),
+                -- Diisi saat approve. K_share disimpan TERBUNGKUS master key (AES-GCM, AAD=id)
+                k_share_wrapped BLOB,
+                k_share_nonce BLOB,
+                -- Paket NSTFY1.<id>.<base64> (K_share terenkripsi RSA-OAEP untuk A).
+                -- Aman disimpan karena hanya bisa dibuka private key A.
+                package TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                decided_at TIMESTAMP,
+                expires_at TIMESTAMP,          -- UTC, format 'YYYY-MM-DD HH:MM:SS'
+                CHECK (requester_id != owner_id)
+            )
+        """)
+
+        # Dokumen yang DISETUJUI B, beserta data key yang di-rewrap ke K_share
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS share_grants (
+                request_id INTEGER NOT NULL
+                    REFERENCES access_requests(id) ON DELETE CASCADE,
+                document_id INTEGER NOT NULL
+                    REFERENCES documents(id) ON DELETE CASCADE,
+                rewrapped_key BLOB NOT NULL,   -- data key terbungkus K_share (AES-GCM)
+                rewrap_nonce BLOB NOT NULL,
+                PRIMARY KEY (request_id, document_id)
+            )
+        """)
+
+        # ===== Audit Log untuk akses dokumen bersama =====
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS access_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                request_id INTEGER
+                    REFERENCES access_requests(id)
+                    ON DELETE SET NULL,
+
+                user_id INTEGER
+                    REFERENCES users(id)
+                    ON DELETE SET NULL,
+
+                document_id INTEGER
+                    REFERENCES documents(id)
+                    ON DELETE SET NULL,
+
+                action TEXT NOT NULL
+                    CHECK (action IN (
+                        'unlock',
+                        'unlock_failed',
+                        'download'
+                    )),
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_access_logs_request
+            ON access_logs(request_id, created_at)
+        """)
+
+        # ===== Tugas 3: tanda tangan digital PDF =====
+
+        # Keypair KHUSUS tanda tangan, terpisah dari user_keys (Tugas 2, untuk enkripsi).
+        # Pemisahan kunci: kunci yang dipakai mendekripsi tidak dipakai juga untuk
+        # menandatangani, sehingga kompromi satu fungsi tidak otomatis membuka fungsi lain.
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS signing_keys (
+                user_id INTEGER PRIMARY KEY
+                    REFERENCES users(id) ON DELETE CASCADE,
+                public_pem TEXT NOT NULL,
+                private_enc TEXT NOT NULL,     -- PKCS#8 terenkripsi password user
+                certificate_der BLOB,          -- opsional: sertifikat self-signed (untuk CMS)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Satu baris = satu PDF yang sudah ditandatangani.
+        # PDF hasil tanda tangan disimpan sebagai dokumen BARU (terenkripsi seperti
+        # dokumen lain); PDF aslinya tidak diubah.
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS document_signatures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id INTEGER NOT NULL UNIQUE
+                    REFERENCES documents(id) ON DELETE CASCADE,     -- PDF bertanda tangan
+                source_document_id INTEGER
+                    REFERENCES documents(id) ON DELETE SET NULL,    -- PDF asli sebelum ditandatangani
+                signer_id INTEGER NOT NULL
+                    REFERENCES users(id) ON DELETE CASCADE,
+                -- Salinan public key SAAT tanda tangan dibuat, supaya tanda tangan lama
+                -- tetap bisa diverifikasi walaupun keypair user nanti diganti.
+                signer_public_pem TEXT NOT NULL,
+                sub_filter TEXT NOT NULL,      -- mis. /Nestiefy.rsa_sha256 atau /adbe.pkcs7.detached
+                byte_range TEXT NOT NULL,      -- JSON [0, a, b, c]
+                digest_sha256 TEXT NOT NULL,   -- hex SHA-256 dari bagian /ByteRange
+                signature BLOB NOT NULL,       -- raw PKCS#1 v1.5 (384 B) atau blob CMS
+                signed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP   -- klaim jam server (tanpa TSA)
+            )
+        """)
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_signatures_source ON document_signatures(source_document_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_signatures_signer ON document_signatures(signer_id)"
+        )
+
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_requests_owner ON access_requests(owner_id, status)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_requests_requester ON access_requests(requester_id, status)"
+        )
+
         connection.commit()
     finally:
         connection.close()

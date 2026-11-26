@@ -168,8 +168,9 @@ def _encrypt_aes_gcm(plaintext: bytes) -> EncryptedBlob:
     )
 
 
-def _decrypt_aes_gcm(blob: EncryptedBlob) -> bytes:
-    data_key = _unwrap_data_key("AES", blob["wrapped_key"], blob["key_wrap_iv"])
+def _decrypt_aes_gcm(blob: EncryptedBlob, data_key: bytes | None = None) -> bytes:
+    if data_key is None:
+        data_key = _unwrap_data_key("AES", blob["wrapped_key"], blob["key_wrap_iv"])
     cipher = AES.new(data_key, AES.MODE_GCM, nonce=blob["iv_or_nonce"])
     plaintext = cipher.decrypt_and_verify(blob["ciphertext"], blob["auth_tag"])
 
@@ -201,8 +202,9 @@ def _encrypt_des_cbc(plaintext: bytes) -> EncryptedBlob:
     )
 
 
-def _decrypt_des_cbc(blob: EncryptedBlob) -> bytes:
-    data_key = _unwrap_data_key("DES", blob["wrapped_key"], blob["key_wrap_iv"])
+def _decrypt_des_cbc(blob: EncryptedBlob, data_key: bytes | None = None) -> bytes:
+    if data_key is None:
+        data_key = _unwrap_data_key("DES", blob["wrapped_key"], blob["key_wrap_iv"])
 
     mac_expected = hmac.new(
         data_key, blob["iv_or_nonce"] + blob["ciphertext"], hashlib.sha256
@@ -238,8 +240,9 @@ def _encrypt_rc4(plaintext: bytes) -> EncryptedBlob:
     )
 
 
-def _decrypt_rc4(blob: EncryptedBlob) -> bytes:
-    data_key = _unwrap_data_key("RC4", blob["wrapped_key"], blob["key_wrap_iv"])
+def _decrypt_rc4(blob: EncryptedBlob, data_key: bytes | None = None) -> bytes:
+    if data_key is None:
+        data_key = _unwrap_data_key("RC4", blob["wrapped_key"], blob["key_wrap_iv"])
 
     mac_expected = hmac.new(data_key, blob["ciphertext"], hashlib.sha256).digest()
     if not hmac.compare_digest(mac_expected, blob["auth_tag"]):
@@ -297,14 +300,16 @@ def encrypt_file(plaintext: bytes, cipher_name: str) -> EncryptedBlob:
         raise ValueError(f"Cipher tidak didukung: {cipher_name}")
 
 
-def decrypt_file(blob: EncryptedBlob, cipher_name: str) -> bytes:
-    """Dekripsi blob dan verifikasi integritas."""
+def decrypt_file(blob: EncryptedBlob, cipher_name: str, data_key: bytes | None = None) -> bytes:
+    """Dekripsi blob dan verifikasi integritas.
+    data_key opsional: kalau diisi (jalur dokumen yang dibagikan lewat K_share),
+    data key TIDAK di-unwrap dari master key, tapi langsung pakai yang diberikan."""
     if cipher_name == "AES":
-        return _decrypt_aes_gcm(blob)
+        return _decrypt_aes_gcm(blob, data_key)
     elif cipher_name == "DES":
-        return _decrypt_des_cbc(blob)
+        return _decrypt_des_cbc(blob, data_key)
     elif cipher_name == "RC4":
-        return _decrypt_rc4(blob)
+        return _decrypt_rc4(blob, data_key)
     else:
         raise ValueError(f"Cipher tidak didukung: {cipher_name}")
 
@@ -346,3 +351,66 @@ def decode_package(pkg: str) -> tuple[str, bytes]:
     if len(parts) != 3 or parts[0] != 'NSTFY1':
         raise ValueError("Format paket tidak valid")
     return parts[1], base64.b64decode(parts[2])
+
+# =============================================================================
+# Share key (fitur berbagi dokumen antar user)
+# CATATAN: bagian ini ditambahkan saat mengerjakan request lifecycle karena
+# dibutuhkan route approve. Mohon dicek/di-review Rafa (pemilik crypto core).
+# =============================================================================
+
+SHARE_KEY_LEN = 32  # K_share = AES-256
+
+
+def generate_share_key() -> bytes:
+    """K_share acak 256-bit, satu per request yang disetujui."""
+    return secrets.token_bytes(SHARE_KEY_LEN)
+
+
+def _kshare_aad(request_id: int) -> bytes:
+    return f"nestiefy:kshare:v1:{int(request_id)}".encode()
+
+
+def share_doc_aad(request_id: int, document_id: int) -> bytes:
+    """AAD untuk data key yang di-rewrap ke K_share. Mengikat ciphertext ke
+    pasangan (request, dokumen) sehingga tidak bisa dipindah ke request/dokumen lain."""
+    return f"nestiefy:share:v1:{int(request_id)}:{int(document_id)}".encode()
+
+
+def _gcm_encrypt(key: bytes, plaintext: bytes, aad: bytes) -> tuple[bytes, bytes]:
+    nonce = secrets.token_bytes(12)
+    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    cipher.update(aad)
+    ciphertext, tag = cipher.encrypt_and_digest(plaintext)
+    return nonce, ciphertext + tag
+
+
+def _gcm_decrypt(key: bytes, nonce: bytes, ciphertext_tag: bytes, aad: bytes) -> bytes:
+    if len(ciphertext_tag) < 16:
+        raise ValueError("Ciphertext terlalu pendek.")
+    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    cipher.update(aad)
+    return cipher.decrypt_and_verify(ciphertext_tag[:-16], ciphertext_tag[-16:])
+
+
+def wrap_share_key(k_share: bytes, request_id: int) -> tuple[bytes, bytes]:
+    """Bungkus K_share dengan master key (AES-GCM, AAD = request_id) untuk disimpan di DB.
+    Return: (nonce, ciphertext||tag)."""
+    return _gcm_encrypt(get_master_key_aes(), k_share, _kshare_aad(request_id))
+
+
+def unwrap_share_key(nonce: bytes, wrapped: bytes, request_id: int) -> bytes:
+    return _gcm_decrypt(get_master_key_aes(), nonce, wrapped, _kshare_aad(request_id))
+
+
+def rewrap_data_key(cipher_name: str, wrapped_key: bytes, key_wrap_iv: bytes,
+                    k_share: bytes, aad: bytes) -> tuple[bytes, bytes]:
+    """Buka data key sebuah dokumen (pakai master key), lalu bungkus ulang dengan K_share.
+    File di disk TIDAK dienkripsi ulang; yang berubah hanya pembungkus data key-nya.
+    Return: (nonce, ciphertext||tag)."""
+    data_key = _unwrap_data_key(cipher_name, wrapped_key, key_wrap_iv)
+    return _gcm_encrypt(k_share, data_key, aad)
+
+
+def unwrap_rewrapped_data_key(k_share: bytes, nonce: bytes, wrapped: bytes, aad: bytes) -> bytes:
+    """Kebalikan rewrap_data_key: dapatkan data key dokumen lewat jalur K_share."""
+    return _gcm_decrypt(k_share, nonce, wrapped, aad)
