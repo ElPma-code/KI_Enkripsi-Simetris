@@ -24,11 +24,14 @@ Keterbatasan yang disadari:
 
 import os
 import hmac
+import base64
 import hashlib
 import secrets
 from typing import TypedDict
 
-from Crypto.Cipher import AES, DES, ARC4
+from Crypto.Cipher import AES, DES, ARC4, PKCS1_OAEP
+from Crypto.Hash import SHA256
+from Crypto.PublicKey import RSA
 from Crypto.Util.Padding import pad, unpad
 
 
@@ -304,28 +307,26 @@ def decrypt_file(blob: EncryptedBlob, cipher_name: str) -> bytes:
         return _decrypt_rc4(blob)
     else:
         raise ValueError(f"Cipher tidak didukung: {cipher_name}")
-    
-# Tambahkan ini di crypto.py
-from Crypto.Cipher import AES, PKCS1_OAEP
-from Crypto.Hash import SHA256
-from Crypto.PublicKey import RSA
-from Crypto.Random import get_random_bytes
-import base64
+
+
+# --- Bagian Tugas 2: RSA keypair & pertukaran K_share ----------------------
 
 # 1. Bikin Keypair buat User (RSA-3072)
 def generate_user_keypair(password: str) -> tuple[str, str]:
     key = RSA.generate(3072)
     public_pem = key.publickey().export_key().decode('utf-8')
     # Private key dienkripsi pakai password user
-    private_enc = key.export_key(passphrase=password, pkcs=8, 
+    private_enc = key.export_key(passphrase=password, pkcs=8,
                                 protection='scryptAndAES256-CBC').decode('utf-8')
     return public_pem, private_enc
+
 
 # 2. Enkripsi K_share pakai Public Key si Penerima (RSA-OAEP)
 def encrypt_share_key_for(public_pem: str, k_share: bytes) -> bytes:
     public_key = RSA.import_key(public_pem)
-    cipher_rsa = PKCS1_OAEP.new(public_key, hashAlgo=SHA256)# Wajib SHA256!
+    cipher_rsa = PKCS1_OAEP.new(public_key, hashAlgo=SHA256)  # Wajib SHA256!
     return cipher_rsa.encrypt(k_share)
+
 
 # 3. Buka K_share pakai Private Key + Password Penerima
 def decrypt_share_key(private_enc: str, password: str, ct: bytes) -> bytes:
@@ -333,10 +334,12 @@ def decrypt_share_key(private_enc: str, password: str, ct: bytes) -> bytes:
     cipher_rsa = PKCS1_OAEP.new(private_key, hashAlgo=SHA256)
     return cipher_rsa.decrypt(ct)
 
+
 # 4. Format Paket yang dikirim lewat WA
 def encode_package(request_id: str, ct: bytes) -> str:
     b64 = base64.b64encode(ct).decode('utf-8')
     return f"NSTFY1.{request_id}.{b64}"
+
 
 def decode_package(pkg: str) -> tuple[str, bytes]:
     parts = pkg.split('.')
