@@ -124,7 +124,12 @@ def sign_document(doc_id):
                 current_app.logger.exception('Encrypted file cleanup failed')
 
 
-def verify_pdf(data, meta, owner_id):
+def verify_pdf(data, meta, owner_id, conn=None):
+    """Verify a stored signature or an independently uploaded signed PDF.
+
+    /Name is only a key lookup hint. Never trust the name (or a key inside the
+    PDF) as identity before the RSA signature verifies against the DB key.
+    """
     try:
         infos = pdf_sign.extract_signatures(data)
         if not infos:
@@ -134,15 +139,38 @@ def verify_pdf(data, meta, owner_id):
         info = infos[0]
         if not info.is_intact:
             return 'invalid', 'byte_range_or_integrity'
-        if meta is None or meta['signer_id'] != owner_id:
-            return 'invalid', 'unknown_signer'
-        if info.sub_filter != pdf_sign.SUBFILTER_RAW or meta['sub_filter'] != info.sub_filter:
+        if info.sub_filter != pdf_sign.SUBFILTER_RAW:
             return 'invalid', 'unsupported_format'
-        if not crypto_sign.verify_digest(meta['signer_public_pem'], info.digest, info.signature):
+
+        if meta is None:
+            # A re-uploaded copy has a new document_id and no signature row.
+            # Lookup by signed /Name, then *authenticate* it using the DB key.
+            if conn is None or not info.signer_name:
+                return 'invalid', 'unknown_signer'
+            signer = conn.execute(
+                'SELECT sk.public_pem FROM signing_keys sk JOIN users u ON u.id = sk.user_id WHERE u.email = ?',
+                (info.signer_name,)
+            ).fetchone()
+            if signer is None:
+                return 'invalid', 'unknown_signer'
+            public_pem = signer['public_pem']
+        else:
+            # Preserve metadata binding on Nestiefy-generated signed documents.
+            if meta['signer_id'] != owner_id:
+                return 'invalid', 'unknown_signer'
+            if meta['sub_filter'] != info.sub_filter:
+                return 'invalid', 'unsupported_format'
+            public_pem = meta['signer_public_pem']
+
+        if not crypto_sign.verify_digest(public_pem, info.digest, info.signature):
             return 'invalid', 'signature_mismatch'
-        if (info.digest.hex() != meta['digest_sha256'] or info.signature != meta['signature'] or list(info.byte_range) != json.loads(meta['byte_range'])):
+        if meta is not None and (
+            info.digest.hex() != meta['digest_sha256']
+            or info.signature != meta['signature']
+            or list(info.byte_range) != json.loads(meta['byte_range'])
+        ):
             return 'invalid', 'metadata_mismatch'
-        return 'valid', 'verified'
+        return 'valid', 'verified_copy' if meta is None else 'verified'
     except (ValueError, TypeError, KeyError, IndexError, OverflowError, PdfReadError):
         return 'invalid', 'malformed_signature'
 
@@ -172,11 +200,23 @@ def verify_document(doc_id):
                 meta = conn.execute('''SELECT s.*, u.email AS signer_email FROM document_signatures s JOIN users u ON u.id=s.signer_id WHERE s.document_id=?''', (doc_id,)).fetchone()
                 try:
                     data = decrypt(doc, data_key)
-                    status, reason = verify_pdf(data, meta, doc['user_id'])
+                    status, reason = verify_pdf(data, meta, doc['user_id'], conn)
                 except (ValueError, OSError, TypeError, PdfReadError):
                     status, reason = 'invalid', 'storage_integrity'
                 audit(conn, uid, doc_id, 'verify', status)
-                response = jsonify(status=status, reason=reason, signer=meta['signer_email'] if status=='valid' else None, signed_at=meta['signed_at'] if status=='valid' else None)
+                # For a re-uploaded valid copy, report the authenticated signer
+                # and /M timestamp embedded in the signed PDF.
+                signer_email = None
+                signed_at = None
+                if status == 'valid':
+                    if meta is not None:
+                        signer_email = meta['signer_email']
+                        signed_at = meta['signed_at']
+                    else:
+                        signed_info = pdf_sign.extract_signature(data)
+                        signer_email = signed_info.signer_name
+                        signed_at = signed_info.signing_time
+                response = jsonify(status=status, reason=reason, signer=signer_email, signed_at=signed_at)
                 response.headers['Cache-Control'] = 'no-store'
                 return response
     except Exception:
