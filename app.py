@@ -176,6 +176,19 @@ def dashboard():
         # shareable_documents, request_categories, pending_incoming_count
         inbox = access_requests.inbox_context(connection, user_id)
 
+        # Id dokumen (milik sendiri + yang dibagikan) yang punya baris di
+        # document_signatures -> badge "Signed" dan tombol Sign disembunyikan.
+        visible_ids = [row["id"] for row in recent] + [d["doc_id"] for d in shared_documents]
+        signed_document_ids = []
+        if visible_ids:
+            placeholders = ",".join("?" * len(visible_ids))
+            signed_document_ids = [
+                row["document_id"] for row in connection.execute(
+                    f"SELECT document_id FROM document_signatures WHERE document_id IN ({placeholders})",
+                    visible_ids,
+                )
+            ]
+
     finally:
         connection.close()
 
@@ -188,6 +201,7 @@ def dashboard():
         recent_documents=recent,
         shared_documents=shared_documents,
         owner_access_logs=owner_access_logs,
+        signed_document_ids=signed_document_ids,
         **inbox,
     )
 
