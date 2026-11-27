@@ -176,6 +176,26 @@ def dashboard():
         # shareable_documents, request_categories, pending_incoming_count
         inbox = access_requests.inbox_context(connection, user_id)
 
+        # Pengguna yang terhubung (tujuan Request Access + kartu My Tenants/My Landlord).
+        # Landlord -> tenant-tenantnya; tenant -> landlord-nya (atau kosong).
+        # Hanya untuk tampilan: access_requests.create_request tetap mengecek sendiri.
+        # Hanya id & email yang dikirim ke template.
+        if user["role"] == "landlord":
+            linked_rows = connection.execute(
+                "SELECT id, email FROM users WHERE landlord_id = ? AND id != ? ORDER BY email",
+                (user_id, user_id),
+            ).fetchall()
+        else:
+            linked_rows = connection.execute(
+                """
+                SELECT l.id, l.email
+                FROM users me JOIN users l ON l.id = me.landlord_id
+                WHERE me.id = ? AND l.id != me.id
+                """,
+                (user_id,),
+            ).fetchall()
+        linked_users = [{"id": row["id"], "email": row["email"]} for row in linked_rows]
+
         # Id dokumen (milik sendiri + yang dibagikan) yang punya baris di
         # document_signatures -> badge "Signed" dan tombol Sign disembunyikan.
         visible_ids = [row["id"] for row in recent] + [d["doc_id"] for d in shared_documents]
@@ -202,6 +222,7 @@ def dashboard():
         shared_documents=shared_documents,
         owner_access_logs=owner_access_logs,
         signed_document_ids=signed_document_ids,
+        linked_users=linked_users,
         **inbox,
     )
 
