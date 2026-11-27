@@ -206,6 +206,80 @@
         {% endif %}
       </div>
 
+      <!-- Quick actions (beda per role) -->
+      {# (href, label, path ikon, angka badge) #}
+      {% set icon_upload = "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" %}
+      {% set icon_send = "M12 19l9 2-9-18-9 18 9-2zm0 0v-8" %}
+      {% set icon_review = "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" %}
+      {% set icon_key = "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" %}
+      {% if is_landlord %}
+        {% set quick_actions = [
+          ("#upload", "Upload rental agreement", icon_upload, 0),
+          ("#requests", "Request from tenant", icon_send, 0),
+          ("#requests", "Review requests", icon_review, pending_incoming_count),
+        ] %}
+      {% else %}
+        {% set quick_actions = [
+          ("#upload", "Upload ID or payment proof", icon_upload, 0),
+          ("#requests", "Request from landlord", icon_send, 0),
+          ("#shared", "Shared with me", icon_key, 0),
+        ] %}
+      {% endif %}
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        {% for href, label, icon, count in quick_actions %}
+        <a href="{{ href }}" class="bg-surface border border-line rounded-2xl px-5 py-4 flex items-center gap-4 hover:border-primary-hover/40 transition-colors">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 {{ accent.tile }}">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ icon }}"></path></svg>
+          </div>
+          <span class="flex-1 text-sm font-semibold text-ink">{{ label }}</span>
+          {% if count and count > 0 %}
+          <span class="min-w-5 h-5 px-1.5 rounded-full bg-gold text-primary text-xs font-semibold flex items-center justify-center" title="Pending requests">{{ count }}</span>
+          {% endif %}
+          <svg class="w-4 h-4 text-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+        </a>
+        {% endfor %}
+      </div>
+
+      {# Kartu overview role: My Tenants (landlord) / My Landlord (tenant), dari linked_users #}
+      <div class="mb-8 bg-surface border border-line rounded-2xl p-6">
+        <div class="flex items-center gap-4 mb-4">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 {{ accent.tile }}">
+            {% if is_landlord %}
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            {% else %}
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+            {% endif %}
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-ink">{{ 'My Tenants' if is_landlord else 'My Landlord' }}</h3>
+            {% if is_landlord %}
+            <p class="text-xs text-muted mt-0.5">{{ linked|length }} tenant{{ 's' if linked|length != 1 }} linked to your account</p>
+            {% else %}
+            <p class="text-xs text-muted mt-0.5">The owner of the property you rent</p>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if linked %}
+        <ul class="border-t border-line divide-y divide-line max-h-72 overflow-y-auto">
+          {% for u in linked %}
+          <li class="flex items-center gap-3 py-3">
+            <span class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold {{ accent.tile }}">{{ u.email[0]|upper }}</span>
+            <span class="flex-1 min-w-0 text-sm font-medium text-ink break-all">{{ u.email }}</span>
+            <!-- Buka halaman Access Requests dengan orang ini sudah terpilih (lihat JS data-request-to) -->
+            <a href="#requests" data-request-to="{{ u.email }}"
+               class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line text-xs font-semibold text-primary whitespace-nowrap transition-colors hover:bg-sage/25 hover:border-sage">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ icon_send }}"></path></svg>
+              Request documents
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="border-t border-line pt-4 text-sm text-muted">{{ no_link_msg }}</p>
+        {% endif %}
+      </div>
+
       <!-- Pengingat: ada permintaan akses yang menunggu keputusan -->
       {% if pending_incoming_count %}
       <a href="#requests" class="mb-8 bg-surface border border-line rounded-2xl px-6 py-5 flex items-center gap-5 hover:border-primary-hover/40 transition-colors">
@@ -1276,6 +1350,7 @@ Open Nestiefy > Shared with Me, paste the package, and enter your own Nestiefy p
     const requestForm = document.getElementById('requestForm');
     const categoryError = document.getElementById('categoryError');
     const requestMessage = document.getElementById('requestMessage');
+    const ownerSelect = document.getElementById('ownerEmail');
 
     if (requestForm) {
       // Wajib pilih minimal satu kategori (backend juga mengecek ini)
@@ -1294,6 +1369,14 @@ Open Nestiefy > Shared with Me, paste the package, and enter your own Nestiefy p
         document.getElementById('messageCount').textContent = requestMessage.value.length;
       });
     }
+
+    // Tombol "Request documents" di kartu My Tenants / My Landlord:
+    // pilih orangnya di dropdown, lalu link #requests membuka halaman Access Requests.
+    document.querySelectorAll('[data-request-to]').forEach(link =>
+      link.addEventListener('click', () => {
+        if (ownerSelect) ownerSelect.value = link.dataset.requestTo;
+      })
+    );
 
     /* ===== Requests: modal Approve ===== */
     const approveModal = document.getElementById('approveModal');
