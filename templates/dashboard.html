@@ -70,12 +70,27 @@
 </head>
 <body class="bg-cream font-body font-medium text-ink antialiased flex h-screen overflow-hidden">
 
+  {# ===== Aksen per role (hanya untuk elemen kecil: badge role, kartu overview, ikon quick action).
+       Landlord = gold, tenant = sage/leaf. Warna utama (primary) tidak berubah.
+       Ditulis sebagai nama class lengkap supaya Tailwind (browser build) bisa membacanya. #}
+  {% set is_landlord = role == 'landlord' %}
+  {% set accent = {
+    'badge': 'text-gold bg-gold/15 border-gold/40' if is_landlord else 'text-sage bg-sage/15 border-sage/40',
+    'tile':  'text-gold bg-gold/15' if is_landlord else 'text-leaf bg-leaf/15',
+  } %}
+
   <!-- ==================== SIDEBAR ==================== -->
   <aside class="w-[260px] bg-primary text-white flex flex-col h-full flex-shrink-0">
 
-    <!-- Logo Area -->
+    <!-- Logo Area + badge role -->
     <div class="h-24 flex items-center justify-between px-8 border-b border-white/10">
-      <h1 class="font-heading text-3xl font-bold tracking-wide">Nestiefy</h1>
+      <div class="flex flex-col items-start gap-1.5">
+        <h1 class="font-heading text-3xl font-bold tracking-wide leading-none">Nestiefy</h1>
+        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-semibold uppercase tracking-wider {{ accent.badge }}">
+          <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
+          {{ 'Landlord' if is_landlord else 'Tenant' }}
+        </span>
+      </div>
       <svg class="w-5 h-5 text-sage" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
     </div>
 
