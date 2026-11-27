@@ -1555,12 +1555,13 @@ Open Nestiefy > Shared with Me, paste the package, and enter your own Nestiefy p
     // Setiap kode "reason" dari signing_routes.verify_pdf -> kalimat yang mudah dipahami
     const verifyReasons = {
       verified:                'The signature is authentic and the PDF has not been changed since it was signed.',
-      no_signature:            'This PDF does not have a digital signature.',
+      verified_copy:           'This is a re-uploaded copy. The signature is authentic and the PDF has not been changed since it was signed.',
+      no_signature:           'This PDF does not have a digital signature.',
       missing_signature:       'Nestiefy has a record of this PDF being signed, but the signature is missing from the file.',
       byte_range_or_integrity: 'The PDF was changed after it was signed.',
       signature_mismatch:      'The signature does not match the content of the PDF. It may have been tampered with.',
       metadata_mismatch:       "The signature inside the file does not match Nestiefy's record of it.",
-      unknown_signer:          "Nestiefy can't confirm who signed this PDF. Only PDFs signed inside Nestiefy can be verified.",
+      unknown_signer:          'The signer of this PDF is not a registered Nestiefy user, so the signature cannot be checked.',
       multiple_signatures:     'The PDF contains more than one signature, which Nestiefy does not support.',
       unsupported_format:      'The signature uses a format Nestiefy cannot verify.',
       malformed_signature:     'The signature data is damaged or unreadable.',
@@ -1574,10 +1575,18 @@ Open Nestiefy > Shared with Me, paste the package, and enter your own Nestiefy p
       error:    { text: 'Could not check', cls: 'text-[#8A6A2B] bg-gold/20' },
     };
 
-    // signed_at dari server = UTC "YYYY-MM-DD HH:MM:SS" -> tampilkan dalam jam lokal user
+    // signed_at dari server, dua kemungkinan format (keduanya UTC):
+    //   "YYYY-MM-DD HH:MM:SS"  -> dari database (dokumen yang ditandatangani di Nestiefy)
+    //   "D:YYYYMMDDHHmmSSZ"    -> tanggal /M di dalam PDF (salinan yang di-upload ulang)
+    // Ditampilkan dalam jam lokal user.
     function formatSignedAt(value) {
-      const date = new Date(String(value).replace(' ', 'T') + 'Z');
-      if (isNaN(date)) return value + ' UTC';
+      const text = String(value);
+      const pdf = text.match(/^D:(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:Z|([+-])(\d{2})'?(\d{2})'?)?$/);
+      const iso = pdf
+        ? `${pdf[1]}-${pdf[2]}-${pdf[3]}T${pdf[4]}:${pdf[5]}:${pdf[6]}` + (pdf[7] ? `${pdf[7]}${pdf[8]}:${pdf[9]}` : 'Z')
+        : text.replace(' ', 'T') + 'Z';
+      const date = new Date(iso);
+      if (isNaN(date)) return text + ' UTC';
       return date.toLocaleString('en-GB', {
         day: 'numeric', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
