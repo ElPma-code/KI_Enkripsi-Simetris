@@ -70,12 +70,31 @@
 </head>
 <body class="bg-cream font-body font-medium text-ink antialiased flex h-screen overflow-hidden">
 
+  {# ===== Aksen per role (hanya untuk elemen kecil: badge role, kartu overview, ikon quick action).
+       Landlord = gold, tenant = sage/leaf. Warna utama (primary) tidak berubah.
+       Ditulis sebagai nama class lengkap supaya Tailwind (browser build) bisa membacanya. #}
+  {% set is_landlord = role == 'landlord' %}
+  {% set accent = {
+    'badge': 'text-gold bg-gold/15 border-gold/40' if is_landlord else 'text-sage bg-sage/15 border-sage/40',
+    'tile':  'text-gold bg-gold/15' if is_landlord else 'text-leaf bg-leaf/15',
+  } %}
+
+  {# Dari app.py dashboard(): landlord -> tenant-tenantnya, tenant -> landlord-nya. Hanya id & email. #}
+  {% set linked = linked_users or [] %}
+  {% set no_link_msg = "You don't have any tenants yet." if is_landlord else "You are not linked to a landlord yet." %}
+
   <!-- ==================== SIDEBAR ==================== -->
   <aside class="w-[260px] bg-primary text-white flex flex-col h-full flex-shrink-0">
 
-    <!-- Logo Area -->
+    <!-- Logo Area + badge role -->
     <div class="h-24 flex items-center justify-between px-8 border-b border-white/10">
-      <h1 class="font-heading text-3xl font-bold tracking-wide">Nestiefy</h1>
+      <div class="flex flex-col items-start gap-1.5">
+        <h1 class="font-heading text-3xl font-bold tracking-wide leading-none">Nestiefy</h1>
+        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-semibold uppercase tracking-wider {{ accent.badge }}">
+          <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
+          {{ 'Landlord' if is_landlord else 'Tenant' }}
+        </span>
+      </div>
       <svg class="w-5 h-5 text-sage" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
     </div>
 
@@ -170,6 +189,10 @@
 
 
     
+    {# Dari app.py dashboard(): id dokumen yang punya baris di document_signatures.
+       "or []" supaya halaman tetap jalan kalau variabel itu belum dikirim. #}
+    {% set signed_ids = signed_document_ids or [] %}
+
     <!-- ==================== VIEW: DASHBOARD ==================== -->
     <section id="view-dashboard" data-page class="px-10 pb-12 max-w-6xl">
 
@@ -180,6 +203,80 @@
         <p class="text-muted text-sm font-medium">Here's an overview of your rental documents.</p>
         {% else %}
         <p class="text-muted text-sm font-medium">Here's an overview of your property documents and access requests.</p>
+        {% endif %}
+      </div>
+
+      <!-- Quick actions (beda per role) -->
+      {# (href, label, path ikon, angka badge) #}
+      {% set icon_upload = "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" %}
+      {% set icon_send = "M12 19l9 2-9-18-9 18 9-2zm0 0v-8" %}
+      {% set icon_review = "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" %}
+      {% set icon_key = "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" %}
+      {% if is_landlord %}
+        {% set quick_actions = [
+          ("#upload", "Upload rental agreement", icon_upload, 0),
+          ("#requests", "Request from tenant", icon_send, 0),
+          ("#requests", "Review requests", icon_review, pending_incoming_count),
+        ] %}
+      {% else %}
+        {% set quick_actions = [
+          ("#upload", "Upload ID or payment proof", icon_upload, 0),
+          ("#requests", "Request from landlord", icon_send, 0),
+          ("#shared", "Shared with me", icon_key, 0),
+        ] %}
+      {% endif %}
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        {% for href, label, icon, count in quick_actions %}
+        <a href="{{ href }}" class="bg-surface border border-line rounded-2xl px-5 py-4 flex items-center gap-4 hover:border-primary-hover/40 transition-colors">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 {{ accent.tile }}">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ icon }}"></path></svg>
+          </div>
+          <span class="flex-1 text-sm font-semibold text-ink">{{ label }}</span>
+          {% if count and count > 0 %}
+          <span class="min-w-5 h-5 px-1.5 rounded-full bg-gold text-primary text-xs font-semibold flex items-center justify-center" title="Pending requests">{{ count }}</span>
+          {% endif %}
+          <svg class="w-4 h-4 text-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+        </a>
+        {% endfor %}
+      </div>
+
+      {# Kartu overview role: My Tenants (landlord) / My Landlord (tenant), dari linked_users #}
+      <div class="mb-8 bg-surface border border-line rounded-2xl p-6">
+        <div class="flex items-center gap-4 mb-4">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 {{ accent.tile }}">
+            {% if is_landlord %}
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            {% else %}
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+            {% endif %}
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-ink">{{ 'My Tenants' if is_landlord else 'My Landlord' }}</h3>
+            {% if is_landlord %}
+            <p class="text-xs text-muted mt-0.5">{{ linked|length }} tenant{{ 's' if linked|length != 1 }} linked to your account</p>
+            {% else %}
+            <p class="text-xs text-muted mt-0.5">The owner of the property you rent</p>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if linked %}
+        <ul class="border-t border-line divide-y divide-line max-h-72 overflow-y-auto">
+          {% for u in linked %}
+          <li class="flex items-center gap-3 py-3">
+            <span class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold {{ accent.tile }}">{{ u.email[0]|upper }}</span>
+            <span class="flex-1 min-w-0 text-sm font-medium text-ink break-all">{{ u.email }}</span>
+            <!-- Buka halaman Access Requests dengan orang ini sudah terpilih (lihat JS data-request-to) -->
+            <a href="#requests" data-request-to="{{ u.email }}"
+               class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line text-xs font-semibold text-primary whitespace-nowrap transition-colors hover:bg-sage/25 hover:border-sage">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ icon_send }}"></path></svg>
+              Request documents
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="border-t border-line pt-4 text-sm text-muted">{{ no_link_msg }}</p>
         {% endif %}
       </div>
 
@@ -275,28 +372,59 @@
                   <div class="w-8 h-8 rounded bg-sage/30 text-primary flex items-center justify-center flex-shrink-0">
                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
                   </div>
-                  {{ doc["original_name"] }}
+                  <div class="min-w-0 flex flex-col">
+                    <span class="break-words">{{ doc["original_name"] }}</span>
+                    {% if doc["id"] in signed_ids %}
+                    <span class="mt-1 w-fit inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold text-leaf-dark bg-leaf/15 whitespace-nowrap" title="This PDF has a digital signature. Click Verify to check it.">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    Signed
+                  </span>
+                    {% endif %}
+                  </div>
                 </td>
                 <td class="py-4 px-6 text-muted">{{ doc["category"] }}</td>
-                <td class="py-4 px-6 text-muted">
+                <td class="py-4 px-6 text-muted whitespace-nowrap">
                   {% if doc["size_bytes"] < 1048576 %}
                     {{ (doc["size_bytes"] // 1024) }} KB
                   {% else %}
                     {{ "%.1f"|format(doc["size_bytes"] / 1048576) }} MB
                   {% endif %}
                 </td>
-                <td class="py-4 px-6 text-muted">{{ doc["created_at"] }}</td>
+                <td class="py-4 px-6 text-muted whitespace-nowrap">{{ doc["created_at"] }}</td>
                 <td class="py-4 px-6">
                   <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium text-primary bg-primary/10">
                     <span class="w-1.5 h-1.5 rounded-full bg-primary"></span> {{ doc["cipher"] }}
                   </span>
                 </td>
-                <td class="py-4 px-6 text-right">
+                <td class="py-4 px-6 text-right whitespace-nowrap">
+                  {# Tombol Sign & Verify hanya untuk PDF: cek mime_type, atau ekstensi .pdf sebagai cadangan #}
+                  {% if doc["mime_type"] == "application/pdf" or (doc["original_name"]|lower).endswith(".pdf") %}
+                  {% if doc["id"] not in signed_ids %}
+                  <button type="button"
+                          data-sign
+                          data-sign-url="{{ url_for('signing.sign_document', doc_id=doc['id']) }}"
+                          data-doc-name="{{ doc['original_name'] }}"
+                          class="inline-flex items-center gap-1.5 px-2.5 py-1.5 mr-1.5 align-middle rounded-lg border border-line text-xs font-semibold text-primary cursor-pointer transition-colors hover:bg-sage/25 hover:border-sage"
+                          title="Digitally sign this PDF">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    Sign
+                  </button>
+                  {% endif %}
+                  <button type="button"
+                          data-verify
+                          data-verify-url="{{ url_for('signing.verify_document', doc_id=doc['id']) }}"
+                          data-doc-name="{{ doc['original_name'] }}"
+                          class="inline-flex items-center gap-1.5 px-2.5 py-1.5 mr-1.5 align-middle rounded-lg border border-line text-xs font-semibold text-primary cursor-pointer transition-colors hover:bg-sage/25 hover:border-sage"
+                          title="Check this PDF's digital signature">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    Verify
+                  </button>
+                  {% endif %}
                   <a href="{{ url_for('download_document', doc_id=doc['id']) }}"
-                     class="inline-block text-muted hover:text-primary mr-2" title="Download">
+                     class="inline-block align-middle text-muted hover:text-primary mr-2" title="Download">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                   </a>
-                  <form action="{{ url_for('delete_document', doc_id=doc['id']) }}" method="POST" class="inline"
+                  <form action="{{ url_for('delete_document', doc_id=doc['id']) }}" method="POST" class="inline align-middle"
                         onsubmit="return confirm('Hapus file ini?');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="text-muted hover:text-red-600" title="Delete">
@@ -488,6 +616,7 @@
 
         <!-- LEFT: Request Access form -->
         <!-- Field name (owner_email, categories, message) harus sama dengan access_requests.create_request -->
+        {% if linked %}
         <form id="requestForm" action="{{ url_for('access.create_request') }}" method="POST"
               class="bg-surface border border-line rounded-2xl p-6">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -495,12 +624,22 @@
           <h3 class="text-lg font-semibold text-ink mb-1">Request Access</h3>
           <p class="text-xs text-muted mb-5">You only choose categories. The owner decides which specific files to share.</p>
 
-          <!-- Email pemilik dokumen -->
+          <!-- Pemilik dokumen: hanya pengguna yang terhubung (linked_users).
+               Backend tetap mengecek hubungan tenant-landlord saat request dikirim. -->
           <div class="flex flex-col mb-5">
-            <label for="ownerEmail" class="text-sm font-semibold text-ink mb-2">Owner's Email</label>
-            <input type="email" id="ownerEmail" name="owner_email" required autocomplete="off"
-                   placeholder="{{ 'your landlord, e.g. owner@email.com' if role == 'tenant' else 'your tenant, e.g. tenant@email.com' }}"
-                   class="h-11 px-4 text-sm text-ink bg-field border border-line rounded-lg outline-none transition placeholder:text-muted/60 focus:border-primary-hover focus:ring-3 focus:ring-primary/10">
+            <label for="ownerEmail" class="text-sm font-semibold text-ink mb-2">{{ 'Tenant' if is_landlord else 'Landlord' }}</label>
+            <div class="relative">
+              <select id="ownerEmail" name="owner_email" required
+                      class="w-full h-11 pl-4 pr-10 text-sm text-ink bg-field border border-line rounded-lg outline-none appearance-none cursor-pointer transition invalid:text-muted/60 focus:border-primary-hover focus:ring-3 focus:ring-primary/10">
+                {% if linked|length > 1 %}
+                <option value="" disabled selected>Select {{ 'a tenant' if is_landlord else 'your landlord' }}</option>
+                {% endif %}
+                {% for u in linked %}
+                <option value="{{ u.email }}"{{ ' selected' if linked|length == 1 }}>{{ u.email }}</option>
+                {% endfor %}
+              </select>
+              <svg class="w-4 h-4 text-muted absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </div>
           </div>
 
           <!-- Kategori (checkbox, boleh lebih dari satu; semuanya bernama "categories") -->
@@ -531,6 +670,16 @@
             Send Request
           </button>
         </form>
+        {% else %}
+        <!-- Belum ada pengguna yang terhubung: form disembunyikan -->
+        <div class="bg-surface border border-line rounded-2xl p-6">
+          <h3 class="text-lg font-semibold text-ink mb-1">Request Access</h3>
+          <div class="mt-4 flex items-start gap-3 rounded-xl bg-cream border border-line px-4 py-4">
+            <svg class="w-5 h-5 text-muted flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <p class="text-sm text-muted">{{ no_link_msg }}</p>
+          </div>
+        </div>
+        {% endif %}
 
         <!-- RIGHT: How it works -->
         <div class="bg-surface border border-line rounded-2xl p-6">
@@ -899,14 +1048,34 @@ Open Nestiefy > Shared with Me, paste the package, and enter your own Nestiefy p
                     <div class="w-8 h-8 rounded bg-sage/30 text-primary flex items-center justify-center flex-shrink-0">
                       <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
                     </div>
-                    <span class="break-all">{{ doc["original_name"] }}</span>
+                    <div class="min-w-0 flex flex-col">
+                      <span class="break-words">{{ doc["original_name"] }}</span>
+                      {% if doc["doc_id"] in signed_ids %}
+                      <span class="mt-1 w-fit inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold text-leaf-dark bg-leaf/15 whitespace-nowrap" title="This PDF has a digital signature. Click Verify to check it.">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    Signed
+                  </span>
+                      {% endif %}
+                    </div>
                   </div>
                 </td>
                 <td class="py-4 px-6 text-muted">{{ doc["owner_email"] }}</td>
                 <td class="py-4 px-6 text-muted">{{ doc["category"] }}</td>
                 <td class="py-4 px-6 text-muted whitespace-nowrap">{{ format_size(doc["size_bytes"]) }}</td>
                 <td class="py-4 px-6 text-muted whitespace-nowrap">{{ doc["expires_at"] }}</td>
-                <td class="py-4 px-6 text-right">
+                <td class="py-4 px-6 text-right whitespace-nowrap">
+                  {# shared_documents tidak membawa mime_type, jadi PDF dikenali dari ekstensinya #}
+                  {% if (doc["original_name"]|lower).endswith(".pdf") %}
+                  <button type="button"
+                          data-verify
+                          data-verify-url="{{ url_for('signing.verify_document', doc_id=doc['doc_id']) }}"
+                          data-doc-name="{{ doc['original_name'] }}"
+                          class="inline-flex items-center gap-1.5 px-3 py-1.5 mr-3 align-middle rounded-lg border border-line text-xs font-semibold text-primary cursor-pointer transition-colors hover:bg-sage/25 hover:border-sage"
+                          title="Check this PDF's digital signature">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    Verify
+                  </button>
+                  {% endif %}
                   <!-- Lewat route Araafya: dicek ulang (unlocked, belum expired, ada grant) setiap download -->
                   <a href="{{ url_for('shared.download_shared', request_id=doc['request_id'], doc_id=doc['doc_id']) }}"
                      title="Download"
@@ -1002,6 +1171,115 @@ Open Nestiefy > Shared with Me, paste the package, and enter your own Nestiefy p
     </form>
   </dialog>
 
+  <!-- ==================== MODAL: VERIFY RESULT ==================== -->
+  <!-- Satu modal untuk semua tombol Verify (Recent Documents & Shared with Me).
+       Hasil diisi JavaScript dari JSON /documents/<id>/verify. -->
+  <dialog id="verifyModal" class="m-auto w-full max-w-md rounded-2xl bg-cream text-ink shadow-xl backdrop:bg-ink/40">
+    <div class="p-7">
+      <input type="hidden" id="verifyCsrf" value="{{ csrf_token() }}">
+
+      <div class="flex justify-between items-start mb-4">
+        <h3 class="font-heading text-2xl font-bold text-primary">Signature Check</h3>
+        <button type="button" data-close-verify class="text-muted hover:text-ink cursor-pointer" title="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <!-- File yang dicek -->
+      <div class="flex items-center gap-3 bg-surface border border-line rounded-xl px-4 py-3 mb-5">
+        <div class="w-8 h-8 rounded bg-sage/30 text-primary flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
+        </div>
+        <p id="verifyDocName" class="text-sm font-medium text-ink break-all"></p>
+      </div>
+
+      <!-- State: sedang memeriksa -->
+      <div id="verifyLoading" class="flex items-center gap-3 text-sm text-muted py-2">
+        <svg class="w-5 h-5 animate-spin text-primary" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"></circle><path fill="currentColor" class="opacity-75" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"></path></svg>
+        Checking signature…
+      </div>
+
+      <!-- State: hasil (valid / invalid / unsigned / error) -->
+      <div id="verifyResult" class="hidden">
+        <span id="verifyBadge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold">
+          <span class="w-2 h-2 rounded-full bg-current"></span>
+          <span id="verifyBadgeText"></span>
+        </span>
+        <p id="verifyReason" class="text-sm text-ink leading-relaxed mt-3"></p>
+
+        <!-- Hanya untuk valid: siapa & kapan -->
+        <dl id="verifyDetails" class="hidden mt-4 bg-surface border border-line rounded-xl divide-y divide-line text-sm">
+          <div class="flex justify-between gap-4 px-4 py-3">
+            <dt class="text-muted">Signed by</dt>
+            <dd id="verifySigner" class="font-semibold text-ink text-right break-all"></dd>
+          </div>
+          <div class="flex justify-between gap-4 px-4 py-3">
+            <dt class="text-muted">Signed at</dt>
+            <dd id="verifySignedAt" class="font-semibold text-ink text-right"></dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="flex justify-end mt-6">
+        <button type="button" data-close-verify
+                class="h-11 px-6 rounded-lg bg-primary text-white text-sm font-semibold cursor-pointer transition-colors hover:bg-primary-hover">
+          Done
+        </button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ==================== MODAL: SIGN PDF ==================== -->
+  <!-- Satu modal untuk semua PDF; action diisi JavaScript sesuai tombol Sign yang diklik.
+       Dikirim lewat fetch karena /documents/<id>/sign membalas JSON, bukan redirect. -->
+  <dialog id="signModal" class="m-auto w-full max-w-md rounded-2xl bg-cream text-ink shadow-xl backdrop:bg-ink/40">
+    <form id="signForm" method="POST" class="p-7">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-heading text-2xl font-bold text-primary">Sign PDF</h3>
+        <button type="button" data-close-sign class="text-muted hover:text-ink cursor-pointer" title="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <!-- Nama file yang akan ditandatangani -->
+      <div class="flex items-center gap-3 bg-surface border border-line rounded-xl px-4 py-3 mb-4">
+        <div class="w-8 h-8 rounded bg-sage/30 text-primary flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
+        </div>
+        <p id="signDocName" class="text-sm font-medium text-ink break-all"></p>
+      </div>
+
+      <p class="text-xs text-muted leading-relaxed mb-5">
+        Your signature is created with your private signing key and embedded inside the PDF.
+        A new copy named <span id="signNewName" class="font-semibold text-ink"></span> will be added to your documents.
+        The original file stays unchanged.
+      </p>
+
+      <div class="flex flex-col">
+        <label for="signPassword" class="text-sm font-semibold text-ink mb-2">Your Password</label>
+        <input type="password" id="signPassword" name="password" required autocomplete="current-password"
+               placeholder="Needed to unlock your signing key"
+               class="h-11 px-4 text-sm text-ink bg-field border border-line rounded-lg outline-none transition placeholder:text-muted/60 focus:border-primary-hover focus:ring-3 focus:ring-primary/10">
+      </div>
+
+      <!-- Pesan hasil (diisi JavaScript) -->
+      <div id="signMessage" class="hidden mt-5 rounded-lg px-5 py-4 text-sm"></div>
+
+      <div class="flex justify-end gap-3 mt-6">
+        <button type="button" data-close-sign
+                class="h-11 px-5 rounded-lg border border-line text-sm font-semibold text-muted cursor-pointer transition-colors hover:text-ink">
+          Cancel
+        </button>
+        <button type="submit" id="signButton"
+                class="h-11 px-6 rounded-lg bg-primary text-white text-sm font-semibold cursor-pointer transition-colors hover:bg-primary-hover disabled:opacity-60 disabled:cursor-wait">
+          Sign PDF
+        </button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     /* ===== Navigasi antar halaman (Dashboard / Upload / Requests / Shared) ===== */
     const pages = document.querySelectorAll('[data-page]');
@@ -1067,25 +1345,38 @@ Open Nestiefy > Shared with Me, paste the package, and enter your own Nestiefy p
     });
 
     /* ===== Requests: form permintaan akses ===== */
+    // Form tidak dirender kalau belum ada pengguna yang terhubung -> cek null dulu,
+    // supaya script di bawah (sign, verify, unlock) tetap jalan.
     const requestForm = document.getElementById('requestForm');
     const categoryError = document.getElementById('categoryError');
     const requestMessage = document.getElementById('requestMessage');
+    const ownerSelect = document.getElementById('ownerEmail');
 
-    // Wajib pilih minimal satu kategori (backend juga mengecek ini)
-    requestForm.addEventListener('submit', e => {
-      if (!requestForm.querySelector('input[name="categories"]:checked')) {
-        e.preventDefault();
-        categoryError.classList.remove('hidden');
-      }
-    });
-    requestForm.querySelectorAll('input[name="categories"]').forEach(box =>
-      box.addEventListener('change', () => categoryError.classList.add('hidden'))
+    if (requestForm) {
+      // Wajib pilih minimal satu kategori (backend juga mengecek ini)
+      requestForm.addEventListener('submit', e => {
+        if (!requestForm.querySelector('input[name="categories"]:checked')) {
+          e.preventDefault();
+          categoryError.classList.remove('hidden');
+        }
+      });
+      requestForm.querySelectorAll('input[name="categories"]').forEach(box =>
+        box.addEventListener('change', () => categoryError.classList.add('hidden'))
+      );
+
+      // Penghitung karakter pesan (maks 500, sama dengan MAX_MESSAGE_LEN di backend)
+      requestMessage.addEventListener('input', () => {
+        document.getElementById('messageCount').textContent = requestMessage.value.length;
+      });
+    }
+
+    // Tombol "Request documents" di kartu My Tenants / My Landlord:
+    // pilih orangnya di dropdown, lalu link #requests membuka halaman Access Requests.
+    document.querySelectorAll('[data-request-to]').forEach(link =>
+      link.addEventListener('click', () => {
+        if (ownerSelect) ownerSelect.value = link.dataset.requestTo;
+      })
     );
-
-    // Penghitung karakter pesan (maks 500, sama dengan MAX_MESSAGE_LEN di backend)
-    requestMessage.addEventListener('input', () => {
-      document.getElementById('messageCount').textContent = requestMessage.value.length;
-    });
 
     /* ===== Requests: modal Approve ===== */
     const approveModal = document.getElementById('approveModal');
@@ -1150,6 +1441,227 @@ Open Nestiefy > Shared with Me, paste the package, and enter your own Nestiefy p
         }
       });
     });
+
+    /* ===== Sign PDF ===== */
+    // /documents/<id>/sign membalas JSON:
+    //   201 {status:"signed", document_id, source_document_id}
+    //   400/404/409/500 {error:"..."}
+    // Tapi 401 (session habis) dan 400 CSRF dari abort() berupa halaman HTML,
+    // jadi isi balasan selalu dicek dulu sebelum ditampilkan.
+    const signModal    = document.getElementById('signModal');
+    const signForm     = document.getElementById('signForm');
+    const signButton   = document.getElementById('signButton');
+    const signMessage  = document.getElementById('signMessage');
+    const signPassword = document.getElementById('signPassword');
+    let signSucceeded  = false;
+
+    function showSignMessage(text, ok) {
+      signMessage.textContent = text;   // textContent, bukan innerHTML: teks dari server tidak dieksekusi
+      signMessage.className = 'mt-5 rounded-lg px-5 py-4 text-sm border ' +
+        (ok ? 'bg-sage/25 border-sage text-primary' : 'bg-red-50 border-red-200 text-red-700');
+    }
+
+    // Pesan cadangan kalau balasan bukan JSON {error: "..."}
+    function fallbackSignError(status) {
+      if (status === 404) return 'Dokumen tidak ditemukan.';
+      if (status === 400) return 'Permintaan tidak valid. Muat ulang halaman lalu coba lagi.';
+      return 'Gagal menandatangani PDF. Silakan coba lagi.';
+    }
+
+    document.querySelectorAll('[data-sign]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        signForm.reset();
+        signForm.action = btn.dataset.signUrl;                 // /documents/<id>/sign
+        const name = btn.dataset.docName;
+        document.getElementById('signDocName').textContent = name;
+        // Nama dokumen baru mengikuti backend: <nama tanpa ekstensi>_signed.pdf
+        document.getElementById('signNewName').textContent = name.replace(/\.[^.]+$/, '') + '_signed.pdf';
+        signMessage.classList.add('hidden');
+        signButton.disabled = false;
+        signButton.textContent = 'Sign PDF';
+        signModal.showModal();
+        signPassword.focus();
+      });
+    });
+
+    signForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      signMessage.classList.add('hidden');     // sembunyikan pesan dari percobaan sebelumnya
+      signButton.disabled = true;
+      signButton.textContent = 'Signing…';
+
+      try {
+        const response = await fetch(signForm.action, {
+          method: 'POST',
+          body: new FormData(signForm),          // password + csrf_token
+          credentials: 'same-origin',
+          headers: { 'Accept': 'application/json' },
+        });
+
+        if (response.status === 401) {           // session habis -> login ulang
+          location.href = "{{ url_for('login') }}";
+          return;
+        }
+
+        // Coba baca JSON; kalau ternyata HTML (mis. halaman error), data = null
+        let data = null;
+        if ((response.headers.get('Content-Type') || '').includes('application/json')) {
+          try { data = await response.json(); } catch { data = null; }
+        }
+
+        if (response.ok && data && data.status === 'signed') {
+          signSucceeded = true;
+          showSignMessage('PDF signed! ' + document.getElementById('signNewName').textContent +
+                          ' has been added to your documents. Reloading…', true);
+          setTimeout(() => { location.hash = 'dashboard'; location.reload(); }, 1500);
+          return;
+        }
+
+        const message = (data && typeof data.error === 'string') ? data.error : fallbackSignError(response.status);
+        showSignMessage(message, false);
+      } catch {
+        showSignMessage('Tidak bisa terhubung ke server. Coba lagi.', false);
+      } finally {
+        signPassword.value = '';                 // password selalu dikosongkan setelah setiap percobaan
+        if (!signSucceeded) {
+          signButton.disabled = false;
+          signButton.textContent = 'Sign PDF';
+          signPassword.focus();
+        }
+      }
+    });
+
+    signModal.querySelectorAll('[data-close-sign]').forEach(btn =>
+      btn.addEventListener('click', () => signModal.close())
+    );
+    signModal.addEventListener('click', e => {
+      if (e.target === signModal) signModal.close();
+    });
+    // Tutup (tombol, Esc, klik luar) = password ikut dihapus
+    signModal.addEventListener('close', () => { signPassword.value = ''; });
+
+    /* ===== Verify PDF ===== */
+    // /documents/<id>/verify membalas JSON:
+    //   {status: "valid" | "invalid" | "unsigned", reason, signer, signed_at}
+    //   signer & signed_at hanya terisi kalau valid.
+    // Error: 404/500 berupa JSON {error}, tapi 401/400 (CSRF) berupa halaman HTML.
+    const verifyModal   = document.getElementById('verifyModal');
+    const verifyLoading = document.getElementById('verifyLoading');
+    const verifyResult  = document.getElementById('verifyResult');
+    const verifyBadge   = document.getElementById('verifyBadge');
+    const verifyDetails = document.getElementById('verifyDetails');
+    let verifyRequestId = 0;   // supaya hasil request lama tidak menimpa hasil request baru
+
+    // Setiap kode "reason" dari signing_routes.verify_pdf -> kalimat yang mudah dipahami
+    const verifyReasons = {
+      verified:                'The signature is authentic and the PDF has not been changed since it was signed.',
+      verified_copy:           'This is a re-uploaded copy. The signature is authentic and the PDF has not been changed since it was signed.',
+      no_signature:           'This PDF does not have a digital signature.',
+      missing_signature:       'Nestiefy has a record of this PDF being signed, but the signature is missing from the file.',
+      byte_range_or_integrity: 'The PDF was changed after it was signed.',
+      signature_mismatch:      'The signature does not match the content of the PDF. It may have been tampered with.',
+      metadata_mismatch:       "The signature inside the file does not match Nestiefy's record of it.",
+      unknown_signer:          'The signer of this PDF is not a registered Nestiefy user, so the signature cannot be checked.',
+      multiple_signatures:     'The PDF contains more than one signature, which Nestiefy does not support.',
+      unsupported_format:      'The signature uses a format Nestiefy cannot verify.',
+      malformed_signature:     'The signature data is damaged or unreadable.',
+      storage_integrity:       'The stored file failed its integrity check, so the signature could not be checked.',
+    };
+
+    const verifyStyles = {
+      valid:    { text: 'Valid signature', cls: 'text-white bg-leaf' },
+      invalid:  { text: 'Invalid signature', cls: 'text-red-700 bg-red-50 border border-red-200' },
+      unsigned: { text: 'Not signed', cls: 'text-muted bg-line' },
+      error:    { text: 'Could not check', cls: 'text-[#8A6A2B] bg-gold/20' },
+    };
+
+    // signed_at dari server, dua kemungkinan format (keduanya UTC):
+    //   "YYYY-MM-DD HH:MM:SS"  -> dari database (dokumen yang ditandatangani di Nestiefy)
+    //   "D:YYYYMMDDHHmmSSZ"    -> tanggal /M di dalam PDF (salinan yang di-upload ulang)
+    // Ditampilkan dalam jam lokal user.
+    function formatSignedAt(value) {
+      const text = String(value);
+      const pdf = text.match(/^D:(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:Z|([+-])(\d{2})'?(\d{2})'?)?$/);
+      const iso = pdf
+        ? `${pdf[1]}-${pdf[2]}-${pdf[3]}T${pdf[4]}:${pdf[5]}:${pdf[6]}` + (pdf[7] ? `${pdf[7]}${pdf[8]}:${pdf[9]}` : 'Z')
+        : text.replace(' ', 'T') + 'Z';
+      const date = new Date(iso);
+      if (isNaN(date)) return text + ' UTC';
+      return date.toLocaleString('en-GB', {
+        day: 'numeric', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+      });
+    }
+
+    function showVerifyResult(state, sentence, signer, signedAt) {
+      const style = verifyStyles[state] || verifyStyles.error;
+      verifyBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold ' + style.cls;
+      document.getElementById('verifyBadgeText').textContent = style.text;
+      document.getElementById('verifyReason').textContent = sentence;
+
+      const showDetails = state === 'valid' && signer;
+      verifyDetails.classList.toggle('hidden', !showDetails);
+      if (showDetails) {
+        document.getElementById('verifySigner').textContent = signer;
+        document.getElementById('verifySignedAt').textContent = signedAt ? formatSignedAt(signedAt) : '–';
+      }
+      verifyLoading.classList.add('hidden');
+      verifyResult.classList.remove('hidden');
+    }
+
+    async function runVerify(url) {
+      const myId = ++verifyRequestId;
+      const body = new FormData();
+      body.append('csrf_token', document.getElementById('verifyCsrf').value);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST', body, credentials: 'same-origin',
+          headers: { 'Accept': 'application/json' },
+        });
+        if (myId !== verifyRequestId) return;          // modal sudah dipakai untuk file lain
+
+        if (response.status === 401) { location.href = "{{ url_for('login') }}"; return; }
+
+        let data = null;
+        if ((response.headers.get('Content-Type') || '').includes('application/json')) {
+          try { data = await response.json(); } catch { data = null; }
+        }
+
+        if (response.ok && data && ['valid', 'invalid', 'unsigned'].includes(data.status)) {
+          const sentence = verifyReasons[data.reason] ||
+            (data.status === 'valid' ? verifyReasons.verified : 'The signature could not be verified.');
+          showVerifyResult(data.status, sentence, data.signer, data.signed_at);
+          return;
+        }
+
+        // Gagal memeriksa (bukan "invalid"): tampilkan pesan backend kalau ada, kalau tidak pesan umum
+        const message = (data && typeof data.error === 'string') ? data.error
+          : response.status === 404 ? 'Dokumen tidak ditemukan atau akses Anda sudah berakhir.'
+          : 'Gagal memverifikasi PDF. Muat ulang halaman lalu coba lagi.';
+        showVerifyResult('error', message);
+      } catch {
+        if (myId === verifyRequestId) showVerifyResult('error', 'Tidak bisa terhubung ke server. Coba lagi.');
+      }
+    }
+
+    document.querySelectorAll('[data-verify]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('verifyDocName').textContent = btn.dataset.docName;
+        verifyResult.classList.add('hidden');
+        verifyLoading.classList.remove('hidden');
+        verifyModal.showModal();
+        runVerify(btn.dataset.verifyUrl);
+      });
+    });
+
+    verifyModal.querySelectorAll('[data-close-verify]').forEach(btn =>
+      btn.addEventListener('click', () => verifyModal.close())
+    );
+    verifyModal.addEventListener('click', e => {
+      if (e.target === verifyModal) verifyModal.close();
+    });
+    verifyModal.addEventListener('close', () => { verifyRequestId++; });   // abaikan balasan yang datang terlambat
 
     /* ===== Shared with Me: unlock paket ===== */
     // /shared/unlock membalas TEKS (200 = berhasil, 400 = gagal), bukan redirect,

@@ -21,8 +21,58 @@ Bagikan percakapan Anda dengan AI: sertakan tautan percakapan dan tangkapan laya
 Nilai diberikan berdasarkan kebenaran program dan kualitas penalaran Anda.
 Plagiarisme, termasuk konten hasil AI yang tidak diverifikasi, akan mendapat nilai 0.
 
+<<<<<<< Updated upstream
 Link percakapan AI :
+=======
+Tugas 2
+Kembangkan aplikasi web Tugas 1 Anda, dengan tetap menggunakan skenario yang sama, agar pengguna dapat berbagi data privat mereka satu sama lain.
+
+Seorang pengguna dapat meminta untuk melihat data privat pengguna lain, termasuk gambar dan dokumen.
+Pengguna yang menerima permintaan membangkitkan sebuah kunci simetris untuk membagikan data kepada pengguna yang meminta.
+Kunci simetris dikirimkan kepada pengguna yang meminta melalui cara lain (misalnya email, WhatsApp), di luar aplikasi Anda. Kunci tersebut harus dilindungi dengan enkripsi asimetris selama pengiriman.
+Kunci simetris harus disimpan secara aman di dalam sistem Anda.
+Persyaratan teknis
+Anda boleh menggunakan bahasa pemrograman dan library kriptografi apa pun.
+Tentukan sendiri bagaimana mekanisme berbagi data bekerja pada aplikasi dan skenario Anda. Setiap pilihan harus dijustifikasi.
+Laporan (terpisah dari Tugas 1, maksimal 2 halaman A4)
+Mengapa berbagi data dibutuhkan dalam skenario Anda, dan bagaimana pengguna akan memanfaatkannya.
+Justifikasi untuk setiap keputusan desain yang signifikan pada fitur-fitur baru.
+Analisis terhadap desain Anda. Sebagai titik awal, pikirkan apa saja yang dapat salah ketika data dibagikan antar pengguna, dan apakah desain Anda tetap aman. Tentukan apa yang akan dianalisis dan mengapa analisis tersebut tepat untuk skenario Anda.
+Pengumpulan dan penilaian
+Push seluruh kode ke GitHub. Riwayat commit Anda akan digunakan untuk penilaian, jadi lakukan commit secara rutin dan bermakna.
+Bagikan percakapan Anda dengan AI: sertakan tautan percakapan dan tangkapan layarnya dalam pengumpulan tugas. Jika Anda menggunakan AI, kami perlu melihat bagaimana Anda menggunakannya.
+Nilai diberikan berdasarkan kebenaran program dan kualitas penalaran Anda.
+Plagiarisme, termasuk konten hasil AI yang tidak diverifikasi, akan mendapat nilai 0.
+
+Tugas 3
+Kembangkan aplikasi web dari tugas-tugas sebelumnya, dengan tetap menggunakan skenario yang sama, agar dokumen PDF yang diunggah dapat ditandatangani secara digital.
+
+Dokumen PDF dapat ditandatangani menggunakan kunci privat pemiliknya.
+Aplikasi Anda harus dapat memverifikasi tanda tangan tersebut.
+Tanda tangan harus disematkan (embedded) di dalam PDF.
+Jika pengguna belum memiliki pasangan kunci, aplikasi Anda harus dapat membangkitkannya.
+Nilai tambahan jika tanda tangan dapat diverifikasi oleh pembaca PDF pihak ketiga.
+Persyaratan teknis
+Anda boleh menggunakan library untuk: membangkitkan pasangan kunci, menghitung nilai hash, dan enkripsi/dekripsi.
+Anda boleh menggunakan library untuk membaca dan menulis file PDF. Logika penandatanganan dan verifikasi harus buatan Anda sendiri.
+Setiap keputusan desain harus dijustifikasi.
+Laporan (terpisah dari tugas-tugas sebelumnya, maksimal 2 halaman A4)
+Mengapa tanda tangan digital dibutuhkan dalam skenario Anda, serta siapa yang menandatangani dan memverifikasi apa.
+Justifikasi untuk setiap keputusan desain yang signifikan pada fitur-fitur baru.
+Analisis terhadap desain Anda. Sebagai titik awal, pikirkan apa saja yang dapat salah ketika dokumen ditandatangani dan diverifikasi, dan apakah desain Anda tetap aman. Tentukan apa yang akan dianalisis dan mengapa analisis tersebut tepat untuk skenario Anda.
+Pengumpulan dan penilaian
+Push seluruh kode ke GitHub. Riwayat commit Anda akan digunakan untuk penilaian, jadi lakukan commit secara rutin dan bermakna.
+Bagikan percakapan Anda dengan AI: sertakan tautan percakapan dan tangkapan layarnya dalam pengumpulan tugas. Jika Anda menggunakan AI, kami perlu melihat bagaimana Anda menggunakannya.
+Nilai diberikan berdasarkan kebenaran program dan kualitas penalaran Anda.
+Plagiarisme, termasuk konten hasil AI yang tidak diverifikasi, akan mendapat nilai 0.
+
+Link Chat AI: 
+https://claude.ai/share/aab5100f-e7da-42d0-976b-75a0e558edaf
+https://chatgpt.com/share/6afb0f28-4c2c-83ec-a3b1-f69ac318c4ad
+https://claude.ai/share/f87b9f38-e2b9-4346-b9f8-a8139b01f095
 https://chatgpt.com/share/6adf4f29-a0d0-83ec-a088-f1e2424d2933
 https://claude.ai/share/aab5100f-e7da-42d0-976b-75a0e558edaf
 https://chatgpt.com/share/6adf5e38-a864-83ec-a5b7-f73606255a94
 https://chat.deepseek.com/share/202tuuge3ba10oj6h4
+https://chat.deepseek.com/share/3ff8q1owhgbdnogcy1
+https://claude.ai/share/f87b9f38-e2b9-4346-b9f8-a8139b01f095
