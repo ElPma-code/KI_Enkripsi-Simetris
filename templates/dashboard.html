@@ -79,6 +79,10 @@
     'tile':  'text-gold bg-gold/15' if is_landlord else 'text-leaf bg-leaf/15',
   } %}
 
+  {# Dari app.py dashboard(): landlord -> tenant-tenantnya, tenant -> landlord-nya. Hanya id & email. #}
+  {% set linked = linked_users or [] %}
+  {% set no_link_msg = "You don't have any tenants yet." if is_landlord else "You are not linked to a landlord yet." %}
+
   <!-- ==================== SIDEBAR ==================== -->
   <aside class="w-[260px] bg-primary text-white flex flex-col h-full flex-shrink-0">
 
@@ -538,6 +542,7 @@
 
         <!-- LEFT: Request Access form -->
         <!-- Field name (owner_email, categories, message) harus sama dengan access_requests.create_request -->
+        {% if linked %}
         <form id="requestForm" action="{{ url_for('access.create_request') }}" method="POST"
               class="bg-surface border border-line rounded-2xl p-6">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -545,12 +550,22 @@
           <h3 class="text-lg font-semibold text-ink mb-1">Request Access</h3>
           <p class="text-xs text-muted mb-5">You only choose categories. The owner decides which specific files to share.</p>
 
-          <!-- Email pemilik dokumen -->
+          <!-- Pemilik dokumen: hanya pengguna yang terhubung (linked_users).
+               Backend tetap mengecek hubungan tenant-landlord saat request dikirim. -->
           <div class="flex flex-col mb-5">
-            <label for="ownerEmail" class="text-sm font-semibold text-ink mb-2">Owner's Email</label>
-            <input type="email" id="ownerEmail" name="owner_email" required autocomplete="off"
-                   placeholder="{{ 'your landlord, e.g. owner@email.com' if role == 'tenant' else 'your tenant, e.g. tenant@email.com' }}"
-                   class="h-11 px-4 text-sm text-ink bg-field border border-line rounded-lg outline-none transition placeholder:text-muted/60 focus:border-primary-hover focus:ring-3 focus:ring-primary/10">
+            <label for="ownerEmail" class="text-sm font-semibold text-ink mb-2">{{ 'Tenant' if is_landlord else 'Landlord' }}</label>
+            <div class="relative">
+              <select id="ownerEmail" name="owner_email" required
+                      class="w-full h-11 pl-4 pr-10 text-sm text-ink bg-field border border-line rounded-lg outline-none appearance-none cursor-pointer transition invalid:text-muted/60 focus:border-primary-hover focus:ring-3 focus:ring-primary/10">
+                {% if linked|length > 1 %}
+                <option value="" disabled selected>Select {{ 'a tenant' if is_landlord else 'your landlord' }}</option>
+                {% endif %}
+                {% for u in linked %}
+                <option value="{{ u.email }}"{{ ' selected' if linked|length == 1 }}>{{ u.email }}</option>
+                {% endfor %}
+              </select>
+              <svg class="w-4 h-4 text-muted absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </div>
           </div>
 
           <!-- Kategori (checkbox, boleh lebih dari satu; semuanya bernama "categories") -->
@@ -581,6 +596,16 @@
             Send Request
           </button>
         </form>
+        {% else %}
+        <!-- Belum ada pengguna yang terhubung: form disembunyikan -->
+        <div class="bg-surface border border-line rounded-2xl p-6">
+          <h3 class="text-lg font-semibold text-ink mb-1">Request Access</h3>
+          <div class="mt-4 flex items-start gap-3 rounded-xl bg-cream border border-line px-4 py-4">
+            <svg class="w-5 h-5 text-muted flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <p class="text-sm text-muted">{{ no_link_msg }}</p>
+          </div>
+        </div>
+        {% endif %}
 
         <!-- RIGHT: How it works -->
         <div class="bg-surface border border-line rounded-2xl p-6">
@@ -1246,25 +1271,29 @@ Open Nestiefy > Shared with Me, paste the package, and enter your own Nestiefy p
     });
 
     /* ===== Requests: form permintaan akses ===== */
+    // Form tidak dirender kalau belum ada pengguna yang terhubung -> cek null dulu,
+    // supaya script di bawah (sign, verify, unlock) tetap jalan.
     const requestForm = document.getElementById('requestForm');
     const categoryError = document.getElementById('categoryError');
     const requestMessage = document.getElementById('requestMessage');
 
-    // Wajib pilih minimal satu kategori (backend juga mengecek ini)
-    requestForm.addEventListener('submit', e => {
-      if (!requestForm.querySelector('input[name="categories"]:checked')) {
-        e.preventDefault();
-        categoryError.classList.remove('hidden');
-      }
-    });
-    requestForm.querySelectorAll('input[name="categories"]').forEach(box =>
-      box.addEventListener('change', () => categoryError.classList.add('hidden'))
-    );
+    if (requestForm) {
+      // Wajib pilih minimal satu kategori (backend juga mengecek ini)
+      requestForm.addEventListener('submit', e => {
+        if (!requestForm.querySelector('input[name="categories"]:checked')) {
+          e.preventDefault();
+          categoryError.classList.remove('hidden');
+        }
+      });
+      requestForm.querySelectorAll('input[name="categories"]').forEach(box =>
+        box.addEventListener('change', () => categoryError.classList.add('hidden'))
+      );
 
-    // Penghitung karakter pesan (maks 500, sama dengan MAX_MESSAGE_LEN di backend)
-    requestMessage.addEventListener('input', () => {
-      document.getElementById('messageCount').textContent = requestMessage.value.length;
-    });
+      // Penghitung karakter pesan (maks 500, sama dengan MAX_MESSAGE_LEN di backend)
+      requestMessage.addEventListener('input', () => {
+        document.getElementById('messageCount').textContent = requestMessage.value.length;
+      });
+    }
 
     /* ===== Requests: modal Approve ===== */
     const approveModal = document.getElementById('approveModal');
